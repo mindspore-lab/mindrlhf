@@ -10,7 +10,7 @@
 [![PRs](https://img.shields.io/badge/PRs-welcome-pink.svg)](https://github.com/mindspore-lab/mindrlhf/pulls)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
-[English](README.md) | [中文](README.md)
+[English](README.md) | 中文
 
 [简介](#简介) |
 [安装](#安装) |
