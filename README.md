@@ -41,7 +41,7 @@ To improve inference performance, MindRLHF integrates `incremental inference`, w
 
 MindRLHF architecture diagram is as follows:
 
-![架构图](./images/framework.png)
+![架构图](https://github.com/mindspore-lab/mindrlhf/blob/master/images/framework.jpg)
 
 ## Installation
 
