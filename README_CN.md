@@ -37,6 +37,8 @@ MindRLHF集成了大模型套件[MindFormers](https://github.com/mindspore-lab/m
 
 MindRLHF架构图如下：
 
+![架构图](https://github.com/mindspore-lab/mindrlhf/blob/master/images/framework.jpg)
+
 ## 安装
 TODO
 
