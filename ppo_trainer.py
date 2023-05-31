@@ -113,17 +113,21 @@ class MindPPOTrainer():
         """generate response"""
         input_ids_list = input_ids.asnumpy().tolist()
         prompt_len = (np.array(input_ids_list) != self.pad_token_id).astype(int).sum(1)
+        left_padding_prompt = np.ones((len(input_ids_list), self.config.max_prompt_length)) * self.config.pad_token_id
         right_padding_prompt = np.ones((len(input_ids_list), self.config.max_prompt_length)) * self.config.pad_token_id # right padding for test
         resposne_array = np.ones((len(input_ids_list), self.max_decode_length)) * self.pad_token_id
         samples = np.ones((len(input_ids_list), self.seq_length)) * self.pad_token_id
         right_padding_prompt = input_ids.asnumpy()
-        outputs = self.model.do_generate(right_padding_prompt)
+        # outputs = self.model.do_generate(right_padding_prompt)
+        outputs = self.model.do_generate_graph(input_ids)
+        outputs = outputs.asnumpy()
         for i in range(len(input_ids_list)):
             x = outputs[i][prompt_len[i]: prompt_len[i] + self.config.max_decode_length]
             resposne_array[i, :len(x)] = x
             p = outputs[i]
             samples[i, :len(p)] = p
-        return Tensor(samples, mstype.int32), Tensor(resposne_array, mstype.int32)
+            left_padding_prompt[i, self.config.max_prompt_length - prompt_len[i]:] = input_ids_list[i][:prompt_len[i]]
+        return Tensor(samples, mstype.int32), Tensor(resposne_array, mstype.int32), Tensor(left_padding_prompt, mstype.int32)
 
     @ms_function
     def generate_element(self, prompt_tensors, samples, responses, original_samples):
@@ -165,8 +169,8 @@ class MindPPOTrainer():
                 batch = next(self.prompt_iterator)
             prompt_tensors = self.cast(batch[0], mstype.int32)
             original_samples =self.cast(batch[2], mstype.int32)
-            padded_samples, responses = self.generate_graph(prompt_tensors) # responses: right padding
-            # padded_samples, responses = self.generate(prompt_tensors) # responses: right padding
+            # padded_samples, responses = self.generate_graph(prompt_tensors) # responses: right padding
+            padded_samples, responses, prompt_tensors = self.generate(prompt_tensors) # responses: right padding
 
             n_samples = padded_samples.shape[0]
             valid_length_response, scores, kl_divergence_estimate, all_logprobs, all_values, all_tokens = \
