@@ -29,9 +29,9 @@ MindSpore RLHF (MindRLHF) is based on the [MindSpore](https://gitee.com/mindspor
 
 The MindRLHF learning process consists of three stages:
 
-Stage 1: Supervised fine-tuning.
-Stage 2: Reward model training.
-Stage 3: Reinforcement learning training.
+* Stage 1: Supervised fine-tuning.
+* Stage 2: Reward model training.
+* Stage 3: Reinforcement learning training.
 
 MindRLHF integrates the rich model library of the [MindFormers](https://github.com/mindspore-lab/mindformers), providing fine-tuning processes for basic models such as Pangu-Alpha (2.6B, 13B) and GPT-2.
 
@@ -41,9 +41,17 @@ To improve inference performance, MindRLHF integrates `incremental inference`, w
 
 MindRLHF architecture diagram is as follows:
 
-![架构图](https://github.com/mindspore-lab/mindrlhf/blob/master/images/framework.jpg)
+![framework](https://github.com/mindspore-lab/mindrlhf/blob/master/images/framework.jpg)
 
 ## Installation
+Current version `0.1.10` can be used directly.
+
+There are some requirements for MindRLHF:
+
+|  requirements   | version|
+|  ----   | ----        |
+| MindSpore    | r2.0   |
+| Mindformers | r0.3    |
 
 ## Supported Models
 
@@ -64,7 +72,7 @@ Table 2： The models and stages supported in MindRLHF
 |  Stages     | Pangu-alpha    |  GPT2   |
 |  ----        | ----           |  ----   |
 | SFT| Y              | Y       |
-| RM  | Y              | N       |
+| RM  | Y              | Y       |
 | RLHF  | Y              | Y       |
 
 In the future, we will integrate more models such as LLAMA, GLM, BLOOM, etc.

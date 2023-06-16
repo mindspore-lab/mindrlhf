@@ -37,10 +37,16 @@ MindRLHF集成了大模型套件[MindFormers](https://github.com/mindspore-lab/m
 
 MindRLHF架构图如下：
 
-![架构图](https://github.com/mindspore-lab/mindrlhf/blob/master/images/framework.jpg)
+![framework](https://github.com/mindspore-lab/mindrlhf/blob/master/images/framework.jpg)
 
 ## 安装
-TODO
+当前版本`0.1.10`无需安装，用户下载即可使用。
+当前版本所依赖框架:
+|  依赖   | 版本|
+|  ----   | ----        |
+| MindSpore    | r2.0   |
+| Mindformers | r0.3    |
+
 
 ## 支持列表
 
@@ -61,7 +67,7 @@ TODO
 |  训练阶段     | Pangu-alpha    |  GPT2   |
 |  ----        | ----           |  ----   |
 | 预训练模型训练| Y              | Y       |
-| 奖励模型训练  | Y              | N       |
+| 奖励模型训练  | Y              | Y       |
 | 强化学习训练  | Y              | Y       |
 
 未来，我们将打通更多的模型，如`LLAMA`、`GLM`、`BLOOM`等，敬请期待。
