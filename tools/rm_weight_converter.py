@@ -2,8 +2,7 @@ import torch
 import numpy as np
 from mindspore import save_checkpoint, Tensor
 
-path = "/autotest/shiwenqi/mindspore-chatgpt-ckpt/rm_ckpt/iter_0000700/"
-# dir_list = ["mp_rank_00", "mp_rank_01", "mp_rank_02", "mp_rank_03", "mp_rank_04", "mp_rank_05", "mp_rank_06", "mp_rank_07"]
+path = "/path/"
 dir_list = ["merged"]
 for d in dir_list:
     torch_path = path + d + "/rm_model.pt"
