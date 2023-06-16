@@ -265,22 +265,3 @@ class MindPPOTrainer():
             if batch_id % 2 == 0:
                 print(f"loss: {loss.asnumpy():>7f}  [{batch_id:>3d}/{n:>3d}]")
             _ = self.ppo_model.post_backward_callback(approx_kl, self.config.batch_size)
-
-# def train_loop(config, dataset, ppo_model, ppo_with_grad):
-#     ppo_with_grad.set_train()
-#     n = dataset.get_dataset_size()
-#     iterator = dataset.create_dict_iterator()
-#     loss = Tensor(0)
-#     for batch_id, databatch in enumerate(iterator):
-#         for _ in range(config.ppo_epochs):
-#             query_tensors = databatch["query_tensors"].to(mstype.int32)
-#             sample_tensors = databatch["sample_tensors"].to(mstype.int32)
-#             old_logprobs = databatch["logprobs"].to(mstype.float32)
-#             old_values = databatch["values"].to(mstype.float32)
-#             old_rewards = databatch["rewards"].to(mstype.float32)
-#             attention_mask = sample_tensors != config.pad_token_id
-#             attention_mask = ops.Cast()(attention_mask, mstype.float32)
-#             loss, approx_kl = ppo_with_grad(query_tensors, sample_tensors, old_logprobs, old_values, old_rewards, attention_mask)
-#         if batch_id % 2 == 0:
-#             print(f"loss: {loss.asnumpy():>7f}  [{batch_id:>3d}/{n:>3d}]")
-#         _ = ppo_model.post_backward_callback(approx_kl, config.batch_size)
