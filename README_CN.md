@@ -74,7 +74,9 @@ MindRLHF架构图如下：
 
 ## 快速入门
 
-下面是`MindRLHF`使用`GPT2`进行微调的过程，示例代码如下：
+* 奖励模型训练: 在`examples`文件夹中展示了如何结合`GPT2`进行奖励模型微调的过程。
+
+* RLHF 微调: 下面是`MindRLHF`使用`GPT2`进行微调的过程，示例代码如下：
 
 ```python
 import mindspore
