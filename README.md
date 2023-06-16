@@ -44,7 +44,7 @@ MindRLHF architecture diagram is as follows:
 ![framework](https://github.com/mindspore-lab/mindrlhf/blob/master/images/framework.jpg)
 
 ## Installation
-Current version `0.1.10` can be used directly.
+Current version `0.1.0` can be used directly.
 
 There are some requirements for MindRLHF:
 
@@ -79,7 +79,9 @@ In the future, we will integrate more models such as LLAMA, GLM, BLOOM, etc.
 
 ## Get Started
 
-Here is an example for RLHF fine-tuning with `GPT2` in `MindRLHF`:
+* Reward model training: a `GPT2` based reward model training tutorial is listed in 'examples'.
+
+* RLHF fine-tuning: here is an example for RLHF fine-tuning with `GPT2` in `MindRLHF`:
 
 ```python
 import mindspore
