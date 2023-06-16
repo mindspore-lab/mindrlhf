@@ -76,13 +76,12 @@ class PPOConfig:
     dtype: mstype = mstype.float32
     param_init_type: str = mstype.float32
     hidden_act: str = 'gelu'
-    # checkpoint_name_or_path: str = "/autotest/qianjiahong/rlhf_master/ms/ppo_ckpt/ppo_model_0322_master.ckpt"
-    checkpoint_name_or_path: str = "/autotest/qianjiahong/rlhf_master/ms/checkpoint_download/gpt2/gpt2.ckpt"
+    checkpoint_name_or_path: str = "/path/ppo.ckp" # ppo ckpt path
     column_names = ["query_tensors", "sample_tensors", "logprobs", "values", "rewards"]
 
     # create experience dataset
-    train_dataset_dir = ["../TLDR_data/train/tldr_train_prompts.mindrecord"]
-    val_dataset_dir = ["../TLDR_data/val/tldr_val_prompts.mindrecord"]
+    train_dataset_dir = ["/path/train.mindrecord"] # train data path, /xxx/xxx/xx.mindrecord
+    val_dataset_dir = ["/path/val.mindrecord"] # val data path
     columns_to_project = ["prompt_ids", "prompt_mask", "original_sample_ids", "original_sample_mask"]
 
 class RMConfig:
@@ -101,7 +100,7 @@ class RMConfig:
     dropout_rate: float = 0.1
     layernorm_dtype: mstype = mstype.float32
     softmax_dtype: mstype = mstype.float32
-    checkpoint_name_or_path: str = "/autotest/qianjiahong/rlhf_master/ms/rm_ckpt/rw_model_0415.ckpt"
+    checkpoint_name_or_path: str = "/path/rm.ckpt" # reward model ckpt
     # there are some new config parameter introduced in mindformer 0.3.0
     dropout_prob: float = 0.0
     initializer_range: float = 0.02

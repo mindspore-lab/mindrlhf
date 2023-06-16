@@ -1,8 +1,8 @@
 import torch
 import os
 
-orig_model_dir = "/autotest/shiwenqi/mindspore-chatgpt-ckpt/rm_ckpt/iter_0000700"
-new_model_dir = "/autotest/shiwenqi/mindspore-chatgpt-ckpt/rm_ckpt/iter_0000700/merged"
+orig_model_dir = "/path1/"
+new_model_dir = "path2"
 
 rank_names = ['mp_rank_00', 'mp_rank_01', 'mp_rank_02', 'mp_rank_03', 'mp_rank_04', 'mp_rank_05', 'mp_rank_06',
               'mp_rank_07']
