@@ -1,7 +1,7 @@
 import os
 from transformers import AutoTokenizer,GPT2TokenizerFast
 from datasets import load_dataset
-from mindformers import Gpt2Tokenizer
+from mindformers import GPT2Tokenizer
 
 import numpy as np
 from mindspore.mindrecord import FileWriter
@@ -164,7 +164,7 @@ if __name__ == '__main__':
     tokenizer.padding_side = "left"
     
     # do not comment these lines
-    ms_tokenizer = Gpt2Tokenizer.from_pretrained("gpt2")
+    ms_tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
     ms_tokenizer.padding = 'max_length'
     ms_tokenizer.padding_side = "left"
     
