@@ -321,7 +321,7 @@ def add_training_params(opt):
                      type=int, default=1024,
                      help="sequence length, default is 1024.")
     opt.add_argument("--vocab_size",
-                     type=int, default=50432,
+                     type=int, default=40000,
                      help="vocabulary size, default is 40000.")
     opt.add_argument("--embedding_size",
                      type=int, default=16384,
@@ -407,7 +407,7 @@ def add_training_params(opt):
                      type=str, default="input_ids",
                      help="Column name of datasets")
     opt.add_argument("--micro_batch_interleaved",
-                     type=int, default=2,
+                     type=int, default=1,
                      help="Parallel split num of batch size. default 2")
     opt.add_argument("--recompute_slice_activation",
                      type=int, default=0,
