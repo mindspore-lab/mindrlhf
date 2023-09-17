@@ -123,12 +123,13 @@ class PanguAlphaTrainOneStepWithLossScaleCell(TrainOneStepWithLossScaleCell):
         self.cast = P.Cast()
 
     def construct(self, 
-                  query_tensors, response_tensors, logprobs, values, rewards, attention_mask, 
+                  query_tensors, response_tensors, logprobs, values, rewards, attention_mask,
+                  advantages, returns, pretrain_ids, loss_mask,
                   layer_past=None, sens=None):
         """Defines the computation performed."""
         weights = self.weights
         # Forward process
-        loss = self.network(query_tensors, response_tensors, logprobs, values, rewards, attention_mask)
+        loss = self.network(query_tensors, response_tensors, logprobs, values, rewards, attention_mask, advantages, returns, pretrain_ids, loss_mask)
         scaling_sens = self.scale_sense
 
         # alloc status and clear should be right before gradoperation
@@ -137,8 +138,7 @@ class PanguAlphaTrainOneStepWithLossScaleCell(TrainOneStepWithLossScaleCell):
         # Backward process using loss scale
         grads = self.grad(self.network,
                           weights)(query_tensors, response_tensors, logprobs, values, rewards, attention_mask,
-                                   scaling_sens_filled)
-
+                                   advantages, returns, pretrain_ids, loss_mask, scaling_sens_filled)
         # apply grad reducer on grads
         grads = self.grad_reducer(grads)
         grads = self.hyper_map(
@@ -224,11 +224,12 @@ class PanguAlphaTrainPipelineWithLossScaleCell(nn.Cell):
     @C.add_flags(has_effect=True)
     def construct(self,
                   query_tensors, response_tensors, logprobs, values, rewards, attention_mask,
+                  advantages, returns, 
                   past=None,
                   sens=None):
         """Defines the computation performed."""
         weights = self.weights
-        loss = self.network(query_tensors, response_tensors, logprobs, values, rewards, attention_mask)
+        loss = self.network(query_tensors, response_tensors, logprobs, values, rewards, attention_mask, advantages, returns)
         if sens is None:
             scaling_sens = self.loss_scale
             scaling_sens = self.reshape(scaling_sens, (1,))
@@ -237,7 +238,7 @@ class PanguAlphaTrainPipelineWithLossScaleCell(nn.Cell):
         # alloc status and clear should be right before gradoperation
         init = self.alloc_status()
         status_clear = self.clear_before_grad(init)
-        grads = self.grad(self.network, weights)(query_tensors, response_tensors, logprobs, values, rewards, attention_mask,
+        grads = self.grad(self.network, weights)(query_tensors, response_tensors, logprobs, values, rewards, attention_mask, advantages, returns,
                                                  self.cast(scaling_sens / self.micro_size,
                                                            mstype.float32))
         init = F.depend(init, grads)
