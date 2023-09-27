@@ -112,7 +112,7 @@ def set_parse_13B(args_opt):
         Set config for 13B mode
     """
     args_opt.embedding_size = 5120
-    args_opt.num_layers = 40
+    args_opt.num_layers = 20
     args_opt.num_heads = 40
     args_opt.word_emb_dp = 1
     args_opt.op_level_model_parallel_num = 8
