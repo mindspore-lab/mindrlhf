@@ -30,10 +30,9 @@ echo "==========================================================================
 ROOT_PATH=`pwd`
 DATA_DIR=$1
 export RANK_TABLE_FILE=$2
-RANK_SIZE=$3
 
-RANK_START=$4
-LOCAL_DEVICE_NUM=${5}
+RANK_START=$3
+LOCAL_DEVICE_NUM=${4}
 
 for((i=0;i<${LOCAL_DEVICE_NUM};i++));
 do
@@ -42,5 +41,5 @@ do
     cd ${ROOT_PATH}/device$i || exit
     export RANK_ID=$[i+RANK_START]
     export DEVICE_ID=$i
-    python3 ${ROOT_PATH}/mindspore_train.py --distribute=true --device_num=$RANK_SIZE --data_url=$DATA_DIR --run_type=train  > log$i.log 2>&1 &
+    python3 ${ROOT_PATH}/train.py > log$i.log 2>&1 &
 done
