@@ -80,5 +80,5 @@ class PPOConfig:
     inference_micro_size: int = 1
     save_dir: str = ""
     sft_model_path: str = "/path/run_pangualpha_2_6b.yaml"
-    critic_cfg_path: str = "/path/run_pangualpha_2_6b.yaml"
-    reward_cfg_path: str = "/path/run_pangualpha_2_6b.yaml"
+    critic_model_path: str = "/path/run_pangualpha_2_6b.yaml"
+    reward_model_path: str = "/path/run_pangualpha_2_6b.yaml"

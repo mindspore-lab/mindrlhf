@@ -16,14 +16,9 @@
 
 echo "=============================================================================================================="
 echo "Please run the script as: "
-echo "bash run_distributed_train.sh DATA_DIR RANK_TABLE_FILE DEVICE_NUM TYPE MODE STAGE_NUM MICRO_SIZE"
-echo "PER_BATCH RANK_START LOCAL_DEVICE_NUM"
+echo "bash run_distributed_inference.sh DATA_DIR RANK_TABLE_FILE RANK_SIZE RANK_START LOCAL_DEVICE_NUM"
 echo "for example:"
-echo "#######no pipeline#######"
-echo "bash run_distributed_train.sh /path/dataset /path/hccl.json 8 fp16 2.6B 1 1 16 0 8"
-echo "#######pipeline#######"
-echo "bash run_distributed_train.sh /path/dataset /path/hccl.json 16 fp16 2.6B 2 4 16 0 8"
-echo "bash run_distributed_train.sh /path/dataset /path/hccl.json 16 fp16 2.6B 2 4 16 8 8"
+echo "bash run_distributed_train.sh /path/dataset /path/hccl.json 8 0 8"
 echo "It is better to use absolute path."
 echo "=============================================================================================================="
 
