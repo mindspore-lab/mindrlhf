@@ -70,8 +70,6 @@ class ProcessLogits(nn.Cell):
 
 class AdaptiveKLController(nn.Cell):
     """Adaptive KL Controller as described in Ziegler et al. "Fine-Tuning Language Models from Human Preferences"
-    Reference: Section 2.2 https://arxiv.org/pdf/1909.08593.pdf#page=2
-    Source: https://github.com/openai/lm-human-preferences/blob/master/lm_human_preferences/train_policy.py
     """
 
     def __init__(self, init_kl_coef: float, target: float, horizon: int):
@@ -221,10 +219,6 @@ class CausalLMHydraWithValueHead(nn.Cell):
                   return_value=False):
         batch_size, seq_length = input_ids.shape
         if self.model_type == 'pangu':
-            # if self.model.phase == 'train':
-            #     seq_length = seq_length - 1
-            #     tokens = self.model.slice(input_ids, (0, 0), (batch_size, seq_length), (1, 1))
-            # else:
             tokens = input_ids
             input_mask = F.cast(self.model.not_equal(tokens, self.model.pad_token_id),
                                 mstype.float32)
@@ -349,8 +343,6 @@ class PPO_model(nn.Cell, GeneratorMixin):
         self.lam=0.95
         self.size = P.Size()
         self.sum_and_count = Tensor([[1,1]])
-        # self.attention_mask = Tensor(np.ones((1, 1024)), mstype.float32)
-        
         self.approx_kl = Parameter([0.0, ], requires_grad=False)
         self.get_attention_mask = AttentionMask(ppo_config.seq_length)
 
@@ -379,34 +371,17 @@ class PPO_model(nn.Cell, GeneratorMixin):
                   pretrain_ids,
                   loss_mask,
                   attention_mask):
-        # print("data: ", query_tensors, response_tensors, logprobs, values, rewards, attention_mask)
         old_logprobs = logprobs
         old_rewards = rewards
         old_values = values
         response_length = F.shape(old_rewards)[1]
         tokens = response_tensors
-
-        '''input_mask = F.cast(F.not_equal(tokens, self.pad_token_id), mstype.float32)
-        bs, seq_length = F.shape(response_tensors)
-        input_position = F.tuple_to_array(F.make_range(seq_length))
-        input_position = P.Tile()(input_position, (bs, 1))
-        attention_mask_pangu = self.get_attention_mask(input_mask)'''
-
-        # attention_mask = self.attention_mask
         logprobs = self.policy_model(tokens, samples=tokens)
         tokens = self.depend(tokens, logprobs)
         values_pred = self.critic_model(tokens)
-
         start = F.shape(query_tensors)[1] - 1
         end = start + response_length
-        
-        '''logprobs, values_pred, mask = (
-                logprobs[:, start:end],
-                values_pred[:, start:end],
-            )
-        values_pred = values_pred[:, start:end]
-        mask = attention_mask[:, start:end]'''
-        
+
         logprobs = logprobs[:, start:end]
         values_pred = values_pred[:, start:end]
         mask = attention_mask[:, start:end]
@@ -450,8 +425,6 @@ class PPO_model(nn.Cell, GeneratorMixin):
         mask,
     ):
         """PPO objective function.
-        References:
-        - https://stable-baselines.readthedocs.io/en/master/modules/ppo2.html
         """
         values_clipped = ops.clip_by_value(
             values,
@@ -468,8 +441,6 @@ class PPO_model(nn.Cell, GeneratorMixin):
         log_ratio = (logprobs - old_logprobs) * mask
 
         ratio = self.exp(log_ratio)
-        # Unbiased KL-div estimates (`k3`). Ref: http://joschu.net/blog/kl-approx.html
-        
         approx_kl = self.reduce_mean((ratio - 1) - log_ratio)
         approx_kl = self.stop_grad(approx_kl)
 
