@@ -64,7 +64,7 @@ def set_pipeline_parallel_context(
         full_batch=bool(full_batch), loss_repeated_mean=True,
         device_num=device_num, enable_parallel_optimizer=bool(optimizer_shard),
         pipeline_stages=stage_num, enable_alltoall=bool(enable_alltoall),
-        strategy_ckpt_save_file='./strategy.ckpt')
+        strategy_ckpt_save_file='strategy.ckpt')
     set_algo_parameters(elementwise_op_strategy_follow=True)
     _set_multi_subgraphs()
     return rank_id, device_num

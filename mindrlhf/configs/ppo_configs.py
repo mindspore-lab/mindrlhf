@@ -7,7 +7,7 @@ class PPOConfig:
     """
     PPO config class which defines the model size
     """
-    epochs: int = 3
+    epochs: int = 2
     total_steps: int = 100000
     batch_size: int = 1
     checkpoint_interval = 10000
@@ -42,29 +42,7 @@ class PPOConfig:
     ref_std: bool = False
     gen_experience_kwargs: bool = False
 
-    seq_length: int = 4096
-    max_prompt_length: int = 2048
-    max_decode_length: int = 2048
-    vocab_size: int = 40000
-    hidden_size: int = 768
-    num_layers: int = 12
-    num_heads: int = 12
-    expand_ratio: int = 4
-    post_layernorm_residual: bool = False
-    dropout_rate: float = 0.1
-    dtype: mstype = mstype.float16
-    compute_dtype: mstype = mstype.float16
-    layernorm_dtype: mstype = mstype.float32
-    softmax_dtype: mstype = mstype.float32
-    eos_token_id: int = 5 # 2
-    pad_token_id: int = 0
-    repetition_penalty: float = 1
-    top_k: int = 1
-    top_p: float = 0.95
-    is_encoder_decoder: bool = False
-    do_sample: bool = False
     sink_size: int = 1
-
     device_target: str = 'Ascend'
     parallel_mode: str = 'semi_auto_parallel'
     full_batch: bool = True
@@ -78,7 +56,8 @@ class PPOConfig:
     mind_dataset_dir: str = "/path/train.mindrecord"
     use_past: bool = False
     inference_micro_size: int = 1
-    save_dir: str = ""
-    sft_model_path: str = "/path/run_pangualpha_2_6b.yaml"
-    critic_model_path: str = "/path/run_pangualpha_2_6b.yaml"
-    reward_model_path: str = "/path/run_pangualpha_2_6b.yaml"
+    save_ckpt_dir: str = ""
+    save_data_file: str = ""
+    sft_model_path: str = "/path/model.yaml"
+    critic_model_path: str = "/path/model.yaml"
+    reward_model_path: str = "/path/model.yaml"

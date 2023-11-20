@@ -14,7 +14,8 @@
 # ============================================================================
 
 """MindRLHF Init"""
-from .wrapper import TrainOneStepWithLossScaleCell
+from .wrapper import TrainOneStepWithLossScaleCell, TrainPipelineWithLossScaleCell
 
 
-__all__ = ['TrainOneStepWithLossScaleCell',]
+__all__ = ['TrainOneStepWithLossScaleCell',
+           'TrainPipelineWithLossScaleCell']

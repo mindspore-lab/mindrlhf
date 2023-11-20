@@ -10,7 +10,7 @@
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
-# limitations under the License.
+# limitations under the License
 # ============================================================================
 """PPO model"""
 import os
@@ -27,13 +27,13 @@ from mindformers.modules.transformer import AttentionMask
 from mindformers.core.loss.loss import CrossEntropyLoss
 from mindformers.models.bloom import BloomLMHeadModel, BloomConfig
 from mindformers.models.pangualpha import PanguAlphaHeadModel, PanguAlphaConfig
+from mindformers.models.llama.llama_config import LlamaConfig
 from mindformers.modules.layers import Linear
-
+from mindrlhf.models.baichuan2.baichuan2_7b import Baichuan7BV2ForCausalLM
 from mindrlhf.utils.generator import GeneratorMixin
-# project_root = os.path.abspath(
-#     os.path.dirname(os.path.realpath(__file__)) + os.path.sep + "..")
-# print('project_root:', project_root)
 
+__all__ = ['PPO_model', 'LogprobsOfLabels', 'ProcessLogits', 'FixedKLController',
+           'CausalLMHydraWithValueHead', 'Sampler',]
 
 class LogprobsOfLabels(nn.Cell):
     def __init__(self):
@@ -96,8 +96,6 @@ class FixedKLController(nn.Cell):
 
     def construct(self, current, n_steps):
         """Returns updated KL coefficient, βₜ₊₁.
-        Arguments:
-            current: The current KL value between the newest policy and the initial policy.
         """
         return Tensor(0.0, mstype.float16)
 
@@ -112,11 +110,12 @@ class CausalLMHydraWithValueHead(nn.Cell):
             model_config.dropout_rate = 0.0
         self.model_config = model_config
         self.ppo_config = ppo_config
-        print("sft model_type: ", type(model_config), isinstance(model_config, PanguAlphaConfig))
         if isinstance(model_config, PanguAlphaConfig):
             self.model_type = 'pangu'
         elif isinstance(model_config, BloomConfig):
             self.model_type = 'bloom'
+        elif isinstance(model_config, LlamaConfig):
+            self.model_type = 'baichuan'
         else:
             raise NotImplementedError("only support pangu and bloom")
         if self.model_type == 'pangu':
@@ -127,7 +126,10 @@ class CausalLMHydraWithValueHead(nn.Cell):
             self.model = BloomLMHeadModel(model_config)
             self.backbone = self.model.transformer
             self.lm_head = self.model.head
-        
+        elif self.model_type == 'baichuan':
+            self.model = Baichuan7BV2ForCausalLM(model_config)
+            self.backbone = self.model.model
+            self.lm_head = self.model.lm_head
         self.lm_head.pipeline_stage = model_config.parallel_config.pipeline_stage - 1
         dp = model_config.parallel_config.data_parallel
         mp = model_config.parallel_config.model_parallel
@@ -190,7 +192,6 @@ class CausalLMHydraWithValueHead(nn.Cell):
             index = current_index.view(-1,)
             logits = self.gather(logits, index, 0)
         top_token_id = self.argmax_no_shard(logits)
-        # top_token_id = self.argmax(logits)
         top_token_id = top_token_id.view(-1, 1)
         return top_token_id
 
@@ -244,6 +245,9 @@ class CausalLMHydraWithValueHead(nn.Cell):
             # [batch_size, seq_length, vocab_size]
             output_states, embedding_table = self.backbone(tokens, input_position, attention_mask,
                                                            init_reset, batch_valid_length)
+        elif self.model_type == 'baichuan':
+            tokens = input_ids
+            output_states = self.backbone(tokens, input_position, init_reset, batch_valid_length)
         else:
             if self.model.phase == "train":
                 tokens = self.model.stridedslice(input_ids, (0, 0), (batch_size, seq_length - 1), (1, 1))
@@ -256,20 +260,20 @@ class CausalLMHydraWithValueHead(nn.Cell):
                 input_mask = self.model.not_equal(tokens, self.model.eos_token_id).astype(mstype.float32)
 
             output_states, embedding_table = self.backbone(tokens, input_mask, init_reset, batch_valid_length)
-        
-        logits_2d = self.lm_head(output_states, embedding_table)
+
+        if self.model_type == 'baichuan':
+            logits_2d = self.lm_head(output_states)
+        else:
+            logits_2d = self.lm_head(output_states, embedding_table)
 
         logits = self.reshape(logits_2d, (batch_size, seq_length, -1))
-
-        # This model is used in three places, generate, make_experience, and ppo
-        # to reduce memory, we return the required output in different places
 
         # used in inference of make_experience and ppo
         if samples is not None:
             logprobs_labels = self.logprobs_of_labels(logits, samples, batch_size, seq_length)
             if return_value == True:
-                value = self.v_head1(self.v_head0(logits))
-                value = self.squeeze(value)
+                value = self.v_head1(self.v_head0(output_states))
+                value = self.reshape(value, (batch_size, seq_length))
                 return logprobs_labels, value
             return logprobs_labels
         
@@ -309,13 +313,11 @@ class PPO_model(nn.Cell, GeneratorMixin):
     """
     PPO_model
     """
-
     def __init__(self, ppo_config, policy_model, critic_model):
         super(PPO_model, self).__init__()
         self.ppo_config = ppo_config
         self.pretrain_coef = self.ppo_config.pretrain_coef
         self.use_past = self.ppo_config.use_past
-        print("use_past: ", self.use_past)
         self.pad_token_id = Tensor(ppo_config.pad_token_id, mstype.int32)
         self.policy_model = policy_model
         self.critic_model = critic_model
@@ -342,7 +344,7 @@ class PPO_model(nn.Cell, GeneratorMixin):
         self.gamma = 1
         self.lam=0.95
         self.size = P.Size()
-        self.sum_and_count = Tensor([[1,1]])
+        self.sum_and_count = Tensor([[1,1]])        
         self.approx_kl = Parameter([0.0, ], requires_grad=False)
         self.get_attention_mask = AttentionMask(ppo_config.seq_length)
 
@@ -379,9 +381,10 @@ class PPO_model(nn.Cell, GeneratorMixin):
         logprobs = self.policy_model(tokens, samples=tokens)
         tokens = self.depend(tokens, logprobs)
         values_pred = self.critic_model(tokens)
+
         start = F.shape(query_tensors)[1] - 1
         end = start + response_length
-
+        
         logprobs = logprobs[:, start:end]
         values_pred = values_pred[:, start:end]
         mask = attention_mask[:, start:end]

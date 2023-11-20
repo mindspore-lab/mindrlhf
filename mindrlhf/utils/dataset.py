@@ -10,8 +10,8 @@ class IteratorStore:
         if self._index >= self.length:
             raise StopIteration
         else:
-            item = (self.store[self._index].query_tensor,
-                    self.store[self._index].response_tensor,
+            item = (self.store[self._index].query_tensors,
+                    self.store[self._index].response_tensors,
                     self.store[self._index].logprobs,
                     self.store[self._index].values,
                     self.store[self._index].rewards,

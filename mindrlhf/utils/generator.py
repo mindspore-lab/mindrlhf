@@ -433,13 +433,6 @@ class GeneratorMixin:
             top_k = 1
         # eval ops
 
-        '''tokenizer = AutoTokenizer.from_pretrained("/path/checkpoint_download/bloom/")
-        print("special tokens: ", tokenizer.pad_token_id, tokenizer.eos_token_id)
-        question_1 = "请50字介绍一下郭德纲。"
-        question_2 = "请问为什么说地球是独一无二的？"
-        input_ids = np.array([tokenizer.encode(question_1), tokenizer.encode(question_2)]).astype(np.int32)
-        print("The input is: ", input_ids, flush=True)'''
-
         output_ids = self._forward(origin_inputs=input_ids,
                                    top_k=top_k,
                                    top_p=top_p,
