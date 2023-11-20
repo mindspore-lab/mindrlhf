@@ -7,7 +7,10 @@ from mindspore.ops import functional as F
 
 from mindformers.models.bloom import BloomLMHeadModel, BloomConfig
 from mindformers.models.pangualpha import PanguAlphaHeadModel, PanguAlphaConfig
+from mindformers.models.llama.llama_config import LlamaConfig
+from mindrlhf.models.baichuan2.baichuan2_7b import Baichuan7BV2ForCausalLM
 
+__all__ = ['RewardModel', 'CriticModel',]
 
 class RewardModel(nn.Cell):
     def __init__(self, config):
@@ -24,14 +27,21 @@ class RewardModel(nn.Cell):
             self.model_type = 'pangu'
         elif isinstance(config, BloomConfig):
             self.model_type = 'bloom'
+        elif isinstance(config, LlamaConfig):
+            self.model_type = 'baichuan'
         else:
             raise NotImplementedError("only support pangu and bloom")
+        print("reward model model_type: ", self.model_type)
+
         if self.model_type == 'pangu':
             self.model = PanguAlphaHeadModel(config)
             self.backbone = self.model.backbone
         elif self.model_type == 'bloom':
             self.model = BloomLMHeadModel(config)
             self.backbone = self.model.transformer
+        elif self.model_type == 'baichuan':
+            self.model = Baichuan7BV2ForCausalLM(config)
+            self.backbone = self.model.model
 
         self.v_head0 = Linear(in_channels=config.hidden_size,
                               out_channels=1,
@@ -50,12 +60,11 @@ class RewardModel(nn.Cell):
               input_position=None, 
               attention_mask=None,
               init_reset=True, 
-              batch_valid_length=None,
-              ):
+              batch_valid_length=None):
         """
         infer.
         """
-        preferred_end_scores = []  # preferred completions' scores
+        preferred_end_scores = [] # preferred completions' scores
         batch_size, seq_length = F.shape(input_ids)
 
         if self.model_type == 'pangu':
@@ -85,6 +94,9 @@ class RewardModel(nn.Cell):
             # [batch_size, seq_length, vocab_size]
             output_states, _ = self.backbone(tokens, input_position, attention_mask,
                                              init_reset, batch_valid_length)
+        elif self.model_type == 'baichuan':
+            tokens = input_ids
+            output_states = self.backbone(tokens, input_position, init_reset, batch_valid_length)
         else:
             input_mask = self.model.not_equal(input_ids, self.model.eos_token_id).astype(mstype.float32)
             output_states, _ = self.backbone(input_ids, input_mask, init_reset, batch_valid_length)
@@ -92,7 +104,7 @@ class RewardModel(nn.Cell):
         rewards = self.v_head0(output_states)
         rewards = self.reshape(rewards, (batch_size, seq_length))
        
-        preferred_rewards = rewards
+        preferred_rewards = rewards  # [batch_size, seq_len]
         for i in range(batch_size):
             preferred_end_idx = end_indices[i].unsqueeze(0)
             preferred_end_scores.append(preferred_rewards[i][preferred_end_idx])
@@ -115,6 +127,8 @@ class CriticModel(nn.Cell):
             self.model_type = 'pangu'
         elif isinstance(config, BloomConfig):
             self.model_type = 'bloom'
+        elif isinstance(config, LlamaConfig):
+            self.model_type = 'baichuan'
         else:
             raise NotImplementedError("only support pangu and bloom")
         print("reward model model_type: ", self.model_type)
@@ -125,6 +139,9 @@ class CriticModel(nn.Cell):
         elif self.model_type == 'bloom':
             self.model = BloomLMHeadModel(config)
             self.backbone = self.model.transformer
+        elif self.model_type == 'baichuan':
+            self.model = Baichuan7BV2ForCausalLM(config)
+            self.backbone = self.model.model
 
         self.v_head0 = Linear(in_channels=config.hidden_size,
                               out_channels=1,
@@ -140,11 +157,7 @@ class CriticModel(nn.Cell):
     def construct(self, input_ids, attention_mask=None, input_position=None):
         batch_size, seq_length = F.shape(input_ids)
         if self.model_type == 'pangu':
-            if self.model.phase == "train":
-                seq_length = seq_length - 1
-                tokens = self.model.slice(input_ids, (0, 0), (batch_size, seq_length), (1, 1))
-            else:
-                tokens = input_ids
+            tokens = input_ids
             input_mask = F.cast(self.model.not_equal(tokens, self.model.pad_token_id),
                                 mstype.float32)
             if attention_mask is None:
@@ -167,9 +180,17 @@ class CriticModel(nn.Cell):
             init_reset=True,
             batch_valid_length=None
             output_states, _ = self.backbone(tokens, input_position, attention_mask)
+        elif self.model_type == 'baichuan':
+            if self.model.phase == "train":
+                seq_length = seq_length - 1
+                tokens = self.model.slice(input_ids, (0, 0), (batch_size, seq_length), (1, 1))
+            else:
+                tokens = input_ids
+            output_states = self.backbone(tokens, input_position)
         else:
             input_mask = self.model.not_equal(input_ids, self.model.eos_token_id).astype(mstype.float32)
             output_states, _ = self.backbone(input_ids, input_mask, init_reset, batch_valid_length)
+ 
         values = self.v_head0(output_states)
         values = self.reshape(values, (batch_size, seq_length))
         return values

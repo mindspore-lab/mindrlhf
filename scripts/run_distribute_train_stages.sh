@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright 2023 Huawei Technologies Co., Ltd
+# Copyright 2020 Huawei Technologies Co., Ltd
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -37,5 +37,5 @@ do
     cd ${ROOT_PATH}/device$i || exit
     export RANK_ID=$[i+RANK_START]
     export DEVICE_ID=$i
-    python3 ${ROOT_PATH}/train.py > log$i.log 2>&1 &
+    python3 ${ROOT_PATH}/ppo_train.py > log$i.log 2>&1 &
 done

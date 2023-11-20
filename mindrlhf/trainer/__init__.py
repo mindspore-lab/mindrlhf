@@ -17,5 +17,4 @@ from .ppo_trainer import *
 __all__ = ['PPOTrainer',
            'get_first_diverge_indices',
            'RewardFn',
-           'PPOData',
-           'set_weight_decay',]
+           'PPOData',]
