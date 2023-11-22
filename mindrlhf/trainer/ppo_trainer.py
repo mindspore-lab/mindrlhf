@@ -75,7 +75,7 @@ class PPOTrainer:
                  rm_model_config=None):
         self.ppo_config = ppo_config
         self.mind_dataset_dir = ppo_config.mind_dataset_dir
-        columns_to_project = ["prompt_ids", "pretrain_ids", "loss_mask"]
+        columns_to_project = ["prompt_ids", "original_sample_ids", "prompt_mask"]
         mindspore.dataset.config.set_seed(2023)
         dataset = MindDataset(self.mind_dataset_dir).project(columns=columns_to_project)
         self.prompt_dataloader = dataset.take(ppo_config.num_rollouts)
