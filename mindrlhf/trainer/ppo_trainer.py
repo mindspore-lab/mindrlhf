@@ -1,41 +1,24 @@
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 import numpy as np
 
 import mindspore
-from mindspore import Tensor
-from mindspore.ops import operations as P
 import mindspore.nn as nn
-from mindrlhf.configs.ppo_configs import PPOConfig
 import mindspore.common.dtype as mstype
-from mindspore import context
+from mindspore import Tensor, context
+from mindspore.ops import operations as P
 from mindspore.dataset import MindDataset
+from mindspore.mindrecord import FileWriter
 
+from mindrlhf.configs.ppo_configs import PPOConfig
 from mindrlhf.models.reward_model import RewardModel, CriticModel
 from mindrlhf.models.ppo_models import CausalLMHydraWithValueHead, PPO_model
 
-def set_weight_decay(params):
-    """
-    Set weight decay coefficient, zero for bias and layernorm, 1e-1 for rest
-    """
-    decay_filter = lambda x: 'layernorm' not in x.name.lower() and "bias" not in x.name.lower()
-    decay_params = list(filter(decay_filter, params))
-    other_params = list(filter(lambda x: not decay_filter(x), params))
-    group_params = [{
-        'params': decay_params,
-        'weight_decay': 1e-1
-    }, {
-        'params': other_params,
-        'weight_decay': 0.0
-    }, {
-        'order_params': params
-    }]
-    return group_params
 
 @dataclass
 class PPOData:
-    query_tensor: Tensor
-    response_tensor: Tensor
+    query_tensors: Tensor
+    response_tensors: Tensor
     logprobs: Tensor
     values: Tensor
     rewards: Tensor
@@ -45,18 +28,16 @@ class PPOData:
     loss_mask: Tensor
     attention_mask: Tensor
 
-def get_first_diverge_indices(preferred_comp_ids,  # shape = batch_size * seq_length
-                              disfavored_comp_ids  # shape = batch_size * seq_length
-                              ):
+
+def get_first_diverge_indices(preferred_comp_ids, disfavored_comp_ids):
     is_equal = Tensor(preferred_comp_ids == disfavored_comp_ids).astype('float32')
-    print("is_equal is: ", is_equal)
     first_diverge_indices = is_equal.sum(axis=1, dtype=mindspore.int32)
     return first_diverge_indices
+
 
 class RewardFn(nn.Cell):
     def __init__(self, model_config):
         super(RewardFn, self).__init__()
-
         self.ckpt_path = model_config.checkpoint_name_or_path
         model_config.checkpoint_name_or_path = ""
         self.pad_token = model_config.pad_token_id
@@ -73,7 +54,7 @@ class RewardFn(nn.Cell):
     def get_scores(self, samples):
         attn_masks = self.not_equal(samples, self.pad_token).astype(mstype.float32)
         end_indices = (attn_masks.sum(axis=1) - 1).to(mstype.int32)
-        bs_scores = self.reward_model.infer(samples, end_indices)    
+        bs_scores = self.reward_model.infer(samples, end_indices)
         return bs_scores
 
     def construct(self, samples, original_sample=None):
@@ -84,21 +65,21 @@ class RewardFn(nn.Cell):
             ori_scores = 0.1
         return scores - ori_scores
 
+
 class PPOTrainer:
-    def __init__(self, 
-                 ppo_config=None, 
-                 sft_model_config=None, 
-                 ref_model_config=None, 
+    def __init__(self,
+                 ppo_config=None,
+                 sft_model_config=None,
+                 ref_model_config=None,
                  critic_model_config=None,
                  rm_model_config=None):
         self.ppo_config = ppo_config
         self.mind_dataset_dir = ppo_config.mind_dataset_dir
         columns_to_project = ["prompt_ids", "pretrain_ids", "loss_mask"]
         mindspore.dataset.config.set_seed(2023)
-        print("mind_dataset_dir", self.mind_dataset_dir)
         dataset = MindDataset(self.mind_dataset_dir).project(columns=columns_to_project)
         self.prompt_dataloader = dataset.take(ppo_config.num_rollouts)
-        self.prompt_dataloader = self.prompt_dataloader.batch(batch_size=ppo_config.chunk_size \
+        self.prompt_dataloader = self.prompt_dataloader.batch(batch_size=ppo_config.chunk_size
                                                               * sft_model_config.parallel_config.data_parallel)
         self.prompt_iterator = self.prompt_dataloader.create_tuple_iterator()
 
@@ -107,43 +88,34 @@ class PPOTrainer:
         policy_model = CausalLMHydraWithValueHead(sft_model_config, self.ppo_config)
         if sft_model_config.checkpoint_name_or_path:
             param_dict = mindspore.load_checkpoint(sft_model_config.checkpoint_name_or_path)
-            new_param_dict = {k.replace("transformer", "backbone").replace("backbone.backbone", "backbone.transformer"): v for k, v in param_dict.items()}
-            print(f"=====begin to load policy model from: {sft_model_config.checkpoint_name_or_path}", flush=True)
+            new_param_dict = {k.replace("transformer", "backbone").replace(
+                "backbone.backbone", "backbone.transformer"): v for k, v in param_dict.items()}
+            print(f"begin to load policy model from: {sft_model_config.checkpoint_name_or_path}", flush=True)
             param_not_load, ckpt_not_load = mindspore.load_param_into_net(policy_model, new_param_dict)
             print(f"param not load: {param_not_load}", flush=True)
             print(f"ckpt not load: {ckpt_not_load}", flush=True)
-        # param_dict = mindspore.load_checkpoint("./sft_model.ckpt")
-        # param_not_load, ckpt_not_load = mindspore.load_param_into_net(policy_model, param_dict)
-        # print(f"param not load: {param_not_load}", flush=True)
-        # print(f"ckpt not load: {ckpt_not_load}", flush=True)
-        
+
         critic_model = CriticModel(critic_model_config)
         if critic_model_config.checkpoint_name_or_path:
             param_dict = mindspore.load_checkpoint(critic_model_config.checkpoint_name_or_path)
-            new_param_dict = {k.replace("reward_model.model.", "").replace("transformer", "backbone").replace("backbone.backbone", "backbone.transformer"): v for k, v in param_dict.items()}
-            print(f"=====begin to load critic model from: {critic_model_config.checkpoint_name_or_path}", flush=True)
+            new_param_dict = {k.replace("reward_model.model.", "").replace("transformer", "backbone").replace(
+                "backbone.backbone", "backbone.transformer"): v for k, v in param_dict.items()}
+            print(f"begin to load critic model from: {critic_model_config.checkpoint_name_or_path}", flush=True)
             param_not_load, ckpt_not_load = mindspore.load_param_into_net(critic_model, new_param_dict)
             print(f"param not load: {param_not_load}", flush=True)
             print(f"ckpt not load: {ckpt_not_load}", flush=True)
-        # param_dict = mindspore.load_checkpoint("critic_model.ckpt")
-        # param_not_load, ckpt_not_load = mindspore.load_param_into_net(critic_model, param_dict)
-        # print(f"param not load: {param_not_load}", flush=True)
-        # print(f"ckpt not load: {ckpt_not_load}", flush=True)
         self.ppo_model = PPO_model(ppo_config, policy_model, critic_model)
 
         self.ref_model = CausalLMHydraWithValueHead(ref_model_config, self.ppo_config)
         if ref_model_config.checkpoint_name_or_path:
             param_dict = mindspore.load_checkpoint(ref_model_config.checkpoint_name_or_path)
-            new_param_dict = {k.replace("transformer", "").replace("transformer", "backbone").replace("backbone.backbone", "backbone.transformer"): v for k, v in param_dict.items()}
-            print(f"=====begin to load critic model from: {ref_model_config.checkpoint_name_or_path}", flush=True)
+            new_param_dict = {k.replace("transformer", "").replace("transformer", "backbone").replace(
+                "backbone.backbone", "backbone.transformer"): v for k, v in param_dict.items()}
+            print(f"begin to load critic model from: {ref_model_config.checkpoint_name_or_path}", flush=True)
             param_not_load, ckpt_not_load = mindspore.load_param_into_net(self.ref_model, new_param_dict)
             print(f"param not load: {param_not_load}", flush=True)
             print(f"ckpt not load: {ckpt_not_load}", flush=True)
         self.ref_model.model.set_train(False)
-        # param_dict = mindspore.load_checkpoint("./sft_model.ckpt")
-        # param_not_load, ckpt_not_load = mindspore.load_param_into_net(self.ref_model, param_dict)
-        # print(f"param not load: {param_not_load}", flush=True)
-        # print(f"ckpt not load: {ckpt_not_load}", flush=True)
 
         self.ref_mean = 0
         self.ref_std = 0
@@ -154,51 +126,79 @@ class PPOTrainer:
         self.reward_fn.set_train(False)
         self.reward_fn.reward_model.set_train(False)
         self.reward_fn.reward_model.model.set_train(False)
-        # param_dict = mindspore.load_checkpoint("reward_model.ckpt")
-        # param_not_load, ckpt_not_load = mindspore.load_param_into_net(self.reward_fn.reward_model, param_dict)
-        # print(f"param not load: {param_not_load}", flush=True)
-        # print(f"ckpt not load: {ckpt_not_load}", flush=True)
- 
+
         self.log_softmax = P.LogSoftmax(axis=-1)
         self.gather = P.GatherD()
         self.unsqueeze = P.ExpandDims()
         self.squeeze = P.Squeeze(axis=-1)
         self.depend = P.Depend()
-        
-        # # save sft, reward, critic model ckpt
-        # mindspore.save_checkpoint(policy_model, "sft_model.ckpt")
-        # mindspore.save_checkpoint(critic_model, "critic_model.ckpt")
-        # mindspore.save_checkpoint(self.reward_fn.reward_model, "reward_model.ckpt")
-        
 
     def push_to_store(self, data):
         self.store = data
 
+    def save_checkpoint(self, rank_id, steps):
+        save_dir = self.ppo_config.save_ckpt_dir
+        if save_dir:
+            print("Save checkpoints in {}".format(save_dir))
+            if not os.path.exists(save_dir):
+                os.makedirs(save_dir)
+            filename = os.path.join(save_dir + "/rank_{}".format(rank_id), "policy_model_epoch_{}.ckpt".format(steps))
+            mindspore.save_checkpoint(trainer.ppo_model.policy_model, filename, integrated_save=False)
+        else:
+            print("There is no checkpoint to save!")
+
+    def save_ppoelement(self, save_path):
+        if save_path:
+            schema = {
+                "query_tensors": {"type": "int32", "shape": [-1]},
+                "response_tensors": {"type": "int32", "shape": [-1]},
+                "logprobs": {"type": "float32", "shape": [-1]},
+                "values": {"type": "float32", "shape": [-1]},
+                "rewards": {"type": "float32", "shape": [-1]},
+                "advantages": {"type": "float32", "shape": [-1]},
+                "returns": {"type": "float32", "shape": [-1]},
+                "pretrain_ids": {"type": "int32", "shape": [-1]},
+                "loss_mask": {"type": "float32", "shape": [-1]},
+                "attention_mask": {"type": "int32", "shape": [-1]},
+            }
+
+            writer = FileWriter(file_name=save_path, shard_num=1, overwrite=True)
+            writer.add_schema(schema)
+            writer.open_and_set_header()
+            count = 0
+            for ele in self.store:
+                count += 1
+                print(asdict(ele))
+                writer.write_raw_data([asdict(ele)])
+            print("Total number of samples: {}".format(count))
+            writer.commit()
+            print("ppo element saved! Output file refer: {}".format(save_path))
+
     def generate(self, input_ids, attn_masks=None):
         print("input_ids", input_ids.shape)
         input_ids_list = input_ids.asnumpy().tolist()
-        
+
         prompt_len = (np.array(input_ids_list) != self.ppo_config.pad_token_id).astype(int).sum(1)
-        left_padding_prompt = np.ones((len(input_ids_list), self.ppo_config.max_prompt_length)) * self.ppo_config.pad_token_id
-        resposne_array = np.ones((len(input_ids_list), self.ppo_config.max_decode_length)) * self.ppo_config.pad_token_id
+        left_padding_prompt = np.ones((len(input_ids_list), self.ppo_config.max_prompt_length)
+                                      ) * self.ppo_config.pad_token_id
+        resposne_array = np.ones((len(input_ids_list), self.ppo_config.max_decode_length)) * \
+            self.ppo_config.pad_token_id
         samples = np.ones((len(input_ids_list), self.ppo_config.seq_length)) * self.ppo_config.pad_token_id
 
         generate_begin_time = time.time()
-        # outputs = self.ppo_model.generate(input_ids_list)
         print("input_ids shape", input_ids.shape)
         outputs = self.ppo_model.policy_model.model.generate(input_ids_list, max_length=self.ppo_config.seq_length)
         print("Generating elapsed time: ", time.time() - generate_begin_time)
-        # exit()
         for i in range(len(input_ids_list)):
             x = outputs[i][prompt_len[i]: prompt_len[i] + self.ppo_config.max_decode_length]
             resposne_array[i, :len(x)] = x
             print(resposne_array)
             p = outputs[i]
             samples[i, :len(p)] = p
-            left_padding_prompt[i, self.ppo_config.max_prompt_length - prompt_len[i]:] = input_ids_list[i][:prompt_len[i]]
+            left_padding_prompt[i, self.ppo_config.max_prompt_length -
+                                prompt_len[i]:] = input_ids_list[i][:prompt_len[i]]
         return Tensor(samples, mstype.int32), Tensor(resposne_array, mstype.int32), Tensor(left_padding_prompt, mstype.int32)
 
-    
     def partition(self, prompt_tensors, samples):
         n_samples: int = samples.shape[0]
         response_tensors = []
@@ -209,7 +209,10 @@ class PPOTrainer:
             response_tensors.append(samples[ix, start: int(start + self.ppo_config.max_decode_length)])
         return response_tensors
 
-    def make_experience(self, num_rollouts: int = 1024, iter_count: int = 0):
+    def make_experience(self, num_rollouts: int = 1024, iter_count: int = 0, rank_id: int = 0):
+        ep_begin_time = time.time()
+        print("Make experience begin at {} \n------------------------------- "
+              .format(time.strftime('%H:%M:%S', time.localtime(ep_begin_time))), flush=True)
         self.ppo_model.policy_model.model.set_train(False)
         self.ppo_model.critic_model.model.set_train(False)
         self.ref_model.model.set_train(False)
@@ -224,14 +227,9 @@ class PPOTrainer:
                 mindspore.dataset.config.set_seed(2023)
                 self.prompt_iterator = self.prompt_dataloader.create_tuple_iterator()
                 batch = next(self.prompt_iterator)
-
-            # batch[0]: prompt, right padding to max_prompt_length
-            # batch[1]: concatenated pretrain data, right padding to max length
-            # batch[2]: loss mask of pretrain data
             prompt_tensors = Tensor(batch[0], mstype.int32)
             pretrain_ids = Tensor(batch[1], mstype.int32)
-            # loss_mask = Tensor(batch[2], mstype.float32)
-            loss_mask = batch[2][:,1:]
+            loss_mask = batch[2][:, 1:]
 
             start_time = time.time()
             print("generation start at {}-------------------------------"
@@ -273,9 +271,6 @@ class PPOTrainer:
                   .format(time.strftime('%H:%M:%S', time.localtime(start_time))), flush=True)
             logprobs = self.ppo_model.policy_model(all_tokens, samples=all_tokens)
             # logprobs, values = self.ppo_model.policy_model(all_tokens, samples=all_tokens, return_value=True)
-            print(f"log_probs:", logprobs, logprobs.shape)
-            # logprobs = self.ppo_model.policy_model(all_tokens)
-            # logprobs = logprobs.reshape((-1, self.ppo_config.seq_length))
             end_time = time.time()
             print("policy model end at {}, elapsed time {}-------------------------------"
                   .format(time.strftime('%H:%M:%S', time.localtime(end_time)), end_time-start_time), flush=True)
@@ -284,7 +279,6 @@ class PPOTrainer:
             print("critic model start at {}-------------------------------"
                   .format(time.strftime('%H:%M:%S', time.localtime(start_time))), flush=True)
             values = self.ppo_model.critic_model(all_tokens)
-            # values = values.reshape((-1, self.ppo_config.seq_length))
             print(f"values:\n{values.asnumpy()}")
             end_time = time.time()
             print("critic model end at {}, elapsed time {}-------------------------------"
@@ -303,19 +297,15 @@ class PPOTrainer:
             logprobs = logprobs.asnumpy()
             values = values.asnumpy()
             ref_logprobs = ref_logprobs.asnumpy()
-
-            n_samples: int = samples.shape[0]
+            n_samples = samples.shape[0]
 
             start = self.ppo_config.max_prompt_length - 1
             end = self.ppo_config.seq_length - 1
             valid_length_response = (samples.asnumpy() != self.ppo_config.pad_token_id).astype(int).sum(1) \
                 - (prompt_tensors.asnumpy() != self.ppo_config.pad_token_id).astype(int).sum(1)
-            print("=====all_logprobs", logprobs.shape, start, end)
             all_values = values[:, start:end]
             all_logprobs = logprobs[:, start:end]
-            print("=====all_logprobs", all_logprobs, start, end)
-            # kl_divergence_estimate = self.ppo_model.kl_ctl.value.asnumpy() * (logprobs - ref_logprobs) # Adaptive KL divergence
-            kl_divergence_estimate = self.ppo_config.kl_coef * (logprobs - ref_logprobs) # Fixed KL divergence
+            kl_divergence_estimate = self.ppo_config.kl_coef * (logprobs - ref_logprobs)  # Fixed KL divergence
             kl_divergence_estimate = kl_divergence_estimate[:, start:end]
 
             rollout_count = 0
@@ -329,20 +319,16 @@ class PPOTrainer:
                   .format(time.strftime('%H:%M:%S', time.localtime(start_time))), flush=True)
             for sample_idx in range(n_samples):
                 sample_kl_divergence_estimate = kl_divergence_estimate[sample_idx]
-                rewards = sample_kl_divergence_estimate 
-                
-                all_logprobs[sample_idx][int(valid_length_response[sample_idx]): ] = 0.0
-                all_values[sample_idx][int(valid_length_response[sample_idx]): ] = 0.0
+                rewards = sample_kl_divergence_estimate
+                all_logprobs[sample_idx][int(valid_length_response[sample_idx]):] = 0.0
+                all_values[sample_idx][int(valid_length_response[sample_idx]):] = 0.0
                 all_values = np.array(all_values).reshape((n_samples, -1))
-                rewards[int(valid_length_response[sample_idx]): ] = 0.0
-                print("all_logprobs0", all_logprobs)
+                rewards[int(valid_length_response[sample_idx]):] = 0.0
                 index = valid_length_response[sample_idx] if valid_length_response[sample_idx] < len(rewards) else -1
                 if isinstance(scores, mindspore.Tensor):
                     scores = scores.asnumpy()
-                rewards[int(index)-1] += scores[sample_idx] 
-
+                rewards[int(index)-1] += scores[sample_idx]
                 response_length = len(rewards)
-
                 lastgaelam = 0
                 advantages_reversed = []
                 for k in range(response_length):
@@ -352,7 +338,7 @@ class PPOTrainer:
                     lastgaelam = delta + self.ppo_model.gamma * self.ppo_model.lam * lastgaelam
                     advantages_reversed.append(lastgaelam)
                 advantages = np.stack(advantages_reversed[::-1])
-                
+
                 returns = advantages + all_values[sample_idx]
 
                 # generate attention_mask
@@ -366,8 +352,8 @@ class PPOTrainer:
                 print("all_logprobs[sample_idx]", all_logprobs, sample_idx, all_logprobs[sample_idx])
                 ppo_rl_elements.append(
                     PPOData(
-                        query_tensor=prompt_tensors[sample_idx],
-                        response_tensor=all_tokens[sample_idx],
+                        query_tensors=prompt_tensors[sample_idx],
+                        response_tensors=all_tokens[sample_idx],
                         logprobs=all_logprobs[sample_idx],
                         values=all_values[sample_idx],
                         rewards=rewards,
@@ -386,11 +372,33 @@ class PPOTrainer:
 
         self.push_to_store(ppo_rl_elements)
         print("Avg scores:\n", np.mean(np.array(scores_record)), flush=True)
+        end_time = time.time()
+        print("Make experience, end at {}, elapsed time {} \n------------------------------- "
+              .format(time.strftime('%H:%M:%S', time.localtime(end_time)), end_time-ep_begin_time), flush=True)
+        if self.ppo_config.save_data_file:
+            if rank_id == 0:
+                self.save_ppoelement(self.ppo_config.save_data_file)
+        self.ppo_model.policy_model.set_train()
+        self.ppo_model.critic_model.set_train()
+
+    def train(self, ppo_with_grad, dataset, epoch):
+        sink_process = mindspore.data_sink(ppo_with_grad, dataset, sink_size=self.ppo_config.sink_size)
+        steps = dataset.dataset_size // self.ppo_config.sink_size
+        print("Total steps: ", steps, flush=True)
+        ep_begin_time = time.time()
+        print("Epoch {}, begin at {} \n------------------------------- "
+              .format(epoch+1, time.strftime('%H:%M:%S', time.localtime(ep_begin_time))), flush=True)
+        for batch in range(steps):
+            for i in range(self.ppo_config.ppo_epochs):
+                out = sink_process()
+                print("PPO Batch: {} | PPO Epoch: {} | loss: {} | lr: {} | is overflow: {} | loss scale: {}"
+                      .format(batch, i, out[0], out[1], out[2], out[3]), flush=True)
+        end_time = time.time()
+        print("Epoch {}, end at {}, elapsed time {} \n------------------------------- "
+              .format(epoch+1, time.strftime('%H:%M:%S', time.localtime(end_time)), end_time-ep_begin_time), flush=True)
+
 
 if __name__ == "__main__":
-    # samples = np.random.randint(low=0, high=15, size=(10, 550)).astype(np.int32)
-    # get_scores(samples)
-    # reward_fn(samples)
     context.set_context(device_target='Ascend', device_id=1, mode=mindspore.GRAPH_MODE)
     trainer = PPOTrainer(ppo_config=PPOConfig)
     trainer.make_experience(num_rollouts=2)

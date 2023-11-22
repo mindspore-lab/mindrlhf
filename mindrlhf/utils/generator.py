@@ -13,9 +13,7 @@
 # limitations under the License.
 # ============================================================================
 
-"""
-For text generation
-"""
+"""text generation"""
 from typing import Optional, List, Union
 import numpy as np
 
@@ -28,6 +26,7 @@ from mindformers.generation.streamers import BaseStreamer
 from mindrlhf.utils.utils import set_pipeline_parallel_context
 
 __all__ = ['GeneratorMixin']
+
 
 def topk_fun(logits, topk=5):
     """Get topk"""
@@ -111,6 +110,7 @@ def precision_correct(p, top_p, top_k, batch_size):
 
 class GeneratorMixin:
     """Generator For the nlp models"""
+
     def __init__(self):
         pass
 
@@ -145,14 +145,15 @@ class GeneratorMixin:
             attention_mask_tmp = None
             if attention_mask:
                 attention_mask_tmp = Tensor(attention_mask, mstype.float32)
-            print("===== first iteration: ", input_ids.tolist(), current_index, attention_mask_tmp, valid_length_each_example, self.policy_model.model.is_first_iteration, self.policy_model.model.use_past, flush=True)
+            print("===== first iteration: ", input_ids.tolist(), current_index, attention_mask_tmp, valid_length_each_example,
+                  self.policy_model.model.is_first_iteration, self.policy_model.model.use_past, flush=True)
             log_probs = self.policy_model(
                 input_ids=Tensor(input_ids, mstype.int32),
                 input_position=Tensor(current_index, mstype.int32),
                 attention_mask=attention_mask_tmp,
                 init_reset=Tensor([False], mstype.bool_),
                 batch_valid_length=Tensor([valid_length_each_example], mstype.int32),
-                is_first_iteration=self.policy_model.model.is_first_iteration, 
+                is_first_iteration=self.policy_model.model.is_first_iteration,
                 use_past=self.policy_model.model.use_past,
             )
             print("===== first iteration output: ", log_probs, flush=True)
@@ -163,7 +164,7 @@ class GeneratorMixin:
 
             inputs_tmp = []
             for i in range(len(current_index)):
-                current_index_tmp = int(current_index[i]) - i * input_ids.shape[1] # multibatch by huangziling
+                current_index_tmp = int(current_index[i]) - i * input_ids.shape[1]  # multibatch by huangziling
                 # use numpy to slice array to avoid complie ascend slice op
                 inputs_tmp.append(input_ids[i][current_index_tmp:current_index_tmp + 1])
             inputs_tmp = np.array(inputs_tmp, dtype=np.int32)
@@ -174,14 +175,14 @@ class GeneratorMixin:
                 attention_mask_tmp = Tensor(attention_mask_tmp, mstype.float32)
 
             # print("===== other iterations: ", inputs_tmp, current_index, attention_mask_tmp, valid_length_each_example, self.policy_model.model.is_first_iteration, self.policy_model.model.use_past, flush=True)
-            
+
             log_probs = self.policy_model(
                 input_ids=Tensor(inputs_tmp, mstype.int32),
                 input_position=Tensor(current_index, mstype.int32),
                 attention_mask=attention_mask_tmp,
                 init_reset=Tensor([True], mstype.bool_),
                 batch_valid_length=Tensor([valid_length_each_example], mstype.int32),
-                is_first_iteration=self.policy_model.model.is_first_iteration, 
+                is_first_iteration=self.policy_model.model.is_first_iteration,
                 use_past=self.policy_model.model.use_past,
                 # batch_valid_length (1,) int32 5
             )
@@ -235,8 +236,8 @@ class GeneratorMixin:
             raise ValueError("The max_length set is smaller than the length in the input_ids. You shout set "
                              f"max_length to {np.max(valid_length_each_example)}")
 
-        target_length = [self.ppo_config.seq_length if valid_length_each_example[i] + self.ppo_config.max_decode_length \
-            > self.ppo_config.seq_length else valid_length_each_example[i] + self.ppo_config.max_decode_length for i in range(batch_size)]
+        target_length = [self.ppo_config.seq_length if valid_length_each_example[i] + self.ppo_config.max_decode_length
+                         > self.ppo_config.seq_length else valid_length_each_example[i] + self.ppo_config.max_decode_length for i in range(batch_size)]
         print("max target_length is: %s", target_length)
         # A list of the frequency of each token
         frequency_list = None
@@ -265,8 +266,8 @@ class GeneratorMixin:
 
             # current_index = [valid_length_each_example[i] - 1 + i * seq_length for i in range(batch_size)]
 
-            current_index = [(valid_length_each_example[i+j*batch_size] - 1 + i * seq_length) \
-                for i in range(batch_size) for j in range(self.ppo_config.inference_micro_size)]
+            current_index = [(valid_length_each_example[i+j*batch_size] - 1 + i * seq_length)
+                             for i in range(batch_size) for j in range(self.ppo_config.inference_micro_size)]
             print("===== current_index: ", current_index, flush=True)
 
             current_index = Tensor(current_index, mstype.int32)
@@ -295,8 +296,9 @@ class GeneratorMixin:
                 # log_probs = self.policy_model(Tensor(input_ids, mstype.int32), current_index)[0]
 
                 # for multi-microbatch inference
-                print("===== input_ids & current_index: ", input_ids, input_ids.shape, current_index, current_index.shape, flush=True)
-                
+                print("===== input_ids & current_index: ", input_ids,
+                      input_ids.shape, current_index, current_index.shape, flush=True)
+
                 # log_probs = self.inference_wrapper(Tensor(input_ids, mstype.int32), current_index).squeeze()
                 log_probs = self.policy_model(Tensor(input_ids, mstype.int32), current_index)
 
@@ -305,9 +307,9 @@ class GeneratorMixin:
                 context.reset_auto_parallel_context()
                 log_probs = self.sr_net_logprobs(log_probs)
                 set_pipeline_parallel_context(parallel_mode=self.ppo_config.parallel_mode, full_batch=self.ppo_config.full_batch,
-                    optimizer_shard=self.policy_model.model_config.parallel_config.optimizer_shard,
-                    stage_num=self.policy_model.model_config.parallel_config.pipeline_stage, 
-                    enable_alltoall=self.ppo_config.enable_alltoall) 
+                                              optimizer_shard=self.policy_model.model_config.parallel_config.optimizer_shard,
+                                              stage_num=self.policy_model.model_config.parallel_config.pipeline_stage,
+                                              enable_alltoall=self.ppo_config.enable_alltoall)
 
             # Sample
             log_probs = log_probs.asnumpy()
@@ -317,8 +319,8 @@ class GeneratorMixin:
             log_probs_revised = log_probs.reshape(batch_size, vocab_size)
             if repetition_penalty != 1:
                 log_probs_revised = log_probs - frequency_list * repetition_penalty - \
-                                    (frequency_list > 0) * repetition_penalty
-                  
+                    (frequency_list > 0) * repetition_penalty
+
             # p, p_args = sampler(log_probs_revised, top_p, top_k, use_pynative)
             p = np.ones_like(log_probs)
             p_args = log_probs
@@ -339,7 +341,7 @@ class GeneratorMixin:
 
                 if streamer is not None:
                     streamer.put(np.asarray([target]))
-                    
+
                 valid_length_each_example[i] += int(1)
                 input_mask[i][valid_length_each_example[i] - 1] = 1
 
@@ -432,13 +434,6 @@ class GeneratorMixin:
             top_p = 1
             top_k = 1
         # eval ops
-
-        '''tokenizer = AutoTokenizer.from_pretrained("/path/checkpoint_download/bloom/")
-        print("special tokens: ", tokenizer.pad_token_id, tokenizer.eos_token_id)
-        question_1 = "请50字介绍一下郭德纲。"
-        question_2 = "请问为什么说地球是独一无二的？"
-        input_ids = np.array([tokenizer.encode(question_1), tokenizer.encode(question_2)]).astype(np.int32)
-        print("The input is: ", input_ids, flush=True)'''
 
         output_ids = self._forward(origin_inputs=input_ids,
                                    top_k=top_k,

@@ -47,34 +47,36 @@ __all__ = ['set_pipeline_parallel_context', 'IsLastStage', 'IsLastStage',
            'FP32StateAdamWeightDecay', 'TimePoint', 'LearningRate',
            'GlobalNorm', 'ClipByGlobalNorm']
 
+
 def set_pipeline_parallel_context(
-    parallel_mode = 'semi_auto_parallel',
-    full_batch = True,
-    optimizer_shard = False,
-    stage_num = 1,
-    enable_alltoall = False):
+        parallel_mode='semi_auto_parallel',
+        full_batch=True,
+        optimizer_shard=False,
+        stage_num=1,
+        enable_alltoall=False):
     r"""Set pipeline parallel context."""
     D.init()
     device_num = D.get_group_size()
     rank_id = D.get_rank()
-    # print("rank_id is {}, device_num is {}".format(rank_id, device_num))
     context.reset_auto_parallel_context()
     context.set_auto_parallel_context(
         parallel_mode=parallel_mode, gradients_mean=False,
         full_batch=bool(full_batch), loss_repeated_mean=True,
         device_num=device_num, enable_parallel_optimizer=bool(optimizer_shard),
         pipeline_stages=stage_num, enable_alltoall=bool(enable_alltoall),
-        strategy_ckpt_save_file='./strategy.ckpt')
+        strategy_ckpt_save_file='strategy.ckpt')
     set_algo_parameters(elementwise_op_strategy_follow=True)
     _set_multi_subgraphs()
     return rank_id, device_num
+
 
 def IsLastStage(pipeline_stage):
     device_num = D.get_group_size()
     rank = D.get_rank()
     per_stage_num = int(device_num / pipeline_stage)
-    is_last_stage = device_num - 1 - per_stage_num < rank  and rank <= device_num - 1
+    is_last_stage = device_num - 1 - per_stage_num < rank and rank <= device_num - 1
     return is_last_stage
+
 
 def IsFirstStage(pipeline_stage):
     device_num = D.get_group_size()
@@ -82,6 +84,7 @@ def IsFirstStage(pipeline_stage):
     per_stage_num = int(device_num / pipeline_stage)
     is_first_stage = rank < per_stage_num
     return is_first_stage
+
 
 class FP32StateAdamWeightDecay(AdamWeightDecay):
     r"""
@@ -249,10 +252,11 @@ class GlobalNorm(nn.Cell):
                 if not self.config.parallel_config.vocab_emb_dp and "position_embedding.embedding_table" not in x.name \
                         and "top_query_embedding_table" not in x.name:
                     allreduce_group_size = allreduce_group_size + \
-                                                (self.config.parallel_config.data_parallel * 1.0,)
+                        (self.config.parallel_config.data_parallel * 1.0,)
                 else:
                     allreduce_group_size = allreduce_group_size + (self.group_size * 1.0,)
         return allreduce_group_size
+
 
 class ClipByGlobalNorm(nn.Cell):
     """
@@ -656,6 +660,7 @@ def download_data(src_data_url, tgt_data_path, rank):
 
 class TimePoint:
     """A helper function for recording the time spend."""
+
     def __init__(self):
         self.start_time = None
         self.end_time = None

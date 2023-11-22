@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""train."""
+"""ppo train."""
 
 import argparse
 from mindspore import context
@@ -28,7 +28,7 @@ def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         '--align_type',
-        default="rlhf",
+        default="rlhf_stages",
         help='the name for align algorithm. Currently, It supports rlhf, rlhf_stages, dpo, dpo_stages')
     parser.add_argument(
         '--model',
@@ -76,7 +76,7 @@ def get_args():
         help='reward_model_path (str): reward model yaml path.')
     parser.add_argument(
         '--save_data_file',
-        default='',
+        default='/path/ppo.mindrecord',
         help='save_data_file (str): save data files.')
     args_opt = parser.parse_args()
     return args_opt
@@ -88,8 +88,7 @@ def run_rlhf(args):
                         compile_cache_path="./cache", max_call_depth=4096,
                         memory_optimize_level='O1', max_device_memory=args.max_device_memory)
 
-    ppo_config, sft_model_config, ref_model_config, critic_model_config, rm_model_config = init_configs(
-        args)
+    ppo_config, sft_model_config, ref_model_config, critic_model_config, rm_model_config = init_configs(args)
     set_pipeline_parallel_context(parallel_mode=ppo_config.parallel_mode, full_batch=ppo_config.full_batch,
                                   optimizer_shard=True, stage_num=sft_model_config.parallel_config.pipeline_stage,
                                   enable_alltoall=ppo_config.enable_alltoall)
@@ -98,8 +97,6 @@ def run_rlhf(args):
     ppo_with_grad = init_network_and_optimizer(trainer)
     rank_id = D.get_rank()
     for epoch in range(ppo_config.epochs):
-        # sampling
-        trainer.make_experience(num_rollouts=ppo_config.num_rollouts)
         dataset = init_ppo_dataset(trainer)
         # use data sink to accelerate
         trainer.train(ppo_with_grad, dataset, epoch)

@@ -48,6 +48,7 @@ def read_json(file_path):
         raise ValueError("Unsupported file format.")
     return input_txt
 
+
 def run(args):
     """ Inference for given text sample. """
     # initialize tokenizer
@@ -149,4 +150,3 @@ if __name__ == "__main__":
         args_.config = os.path.join(work_path, args_.config)
 
     run(args_)
-    
