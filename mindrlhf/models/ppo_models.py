@@ -13,7 +13,6 @@
 # limitations under the License
 # ============================================================================
 """PPO model"""
-import os
 import numpy as np
 
 import mindspore
@@ -35,6 +34,7 @@ from mindrlhf.utils.generator import GeneratorMixin
 __all__ = ['PPO_model', 'LogprobsOfLabels', 'ProcessLogits', 'FixedKLController',
            'CausalLMHydraWithValueHead', 'Sampler',]
 
+
 class LogprobsOfLabels(nn.Cell):
     def __init__(self):
         super(LogprobsOfLabels, self).__init__()
@@ -43,11 +43,13 @@ class LogprobsOfLabels(nn.Cell):
         self.gatherd = P.GatherD()
         self.unsqueeze = P.ExpandDims()
         self.squeeze = P.Squeeze(axis=-1)
+
     def construct(self, logits, labels):
         labels = self.cast(labels, mindspore.int32)
         logprobs = self.log_softmax(logits)
         logprobs_labels = self.gatherd(logprobs, -1, self.unsqueeze(labels, -1))
         return self.squeeze(logprobs_labels)
+
 
 class ProcessLogits(nn.Cell):
     def __init__(self):
@@ -68,6 +70,7 @@ class ProcessLogits(nn.Cell):
         outputs = F.tensor_pow(self.e, outputs)
         return outputs
 
+
 class AdaptiveKLController(nn.Cell):
     """Adaptive KL Controller as described in Ziegler et al. "Fine-Tuning Language Models from Human Preferences"
     """
@@ -87,6 +90,7 @@ class AdaptiveKLController(nn.Cell):
         self.value *= mult
         return self.value
 
+
 class FixedKLController(nn.Cell):
     """Fixed KL controller."""
 
@@ -98,6 +102,7 @@ class FixedKLController(nn.Cell):
         """Returns updated KL coefficient, βₜ₊₁.
         """
         return Tensor(0.0, mstype.float16)
+
 
 class CausalLMHydraWithValueHead(nn.Cell):
     """
@@ -168,9 +173,10 @@ class CausalLMHydraWithValueHead(nn.Cell):
         self.argmax = P.Argmax(-1).shard(((dp, mp),))
         self.expand_dims = P.ExpandDims().shard(((dp, 1, 1),))
         self.sub_shard = P.Sub().shard(((), (1, 1, 1)))
-        
+
         self.minus_one = Tensor([-1], mstype.int32)
-        self.v_head0 = Linear(self.ppo_config.hidden_size, 2*self.ppo_config.hidden_size, activation='relu', has_bias=True)
+        self.v_head0 = Linear(self.ppo_config.hidden_size, 2*self.ppo_config.hidden_size,
+                              activation='relu', has_bias=True)
         self.v_head1 = Linear(2*self.ppo_config.hidden_size, 1, has_bias=True)
 
     def process_logits(self, logits, current_index=None, is_first_iteration=False, use_past=False):
@@ -200,19 +206,19 @@ class CausalLMHydraWithValueHead(nn.Cell):
         samples = samples[:, 1:]
         logprobs = self.logsoftmax_1(logits)
         logprobs = self.squeeze_no_shard(self.gatherd(logprobs, -1, self.unsqueeze(samples, -1)))
-        
+
         return logprobs
 
     def construct(self,
                   # inputs for the llm
-                  input_ids, 
-                  input_position=None, 
+                  input_ids,
+                  input_position=None,
                   position_ids=None,
                   attention_mask=None,
-                  init_reset=True, 
+                  init_reset=True,
                   batch_valid_length=None,
                   # inputs for `process_logits`
-                  is_first_iteration=False, 
+                  is_first_iteration=False,
                   use_past=False,
                   # inputs for choosing the output branch
                   samples=None,
@@ -228,8 +234,8 @@ class CausalLMHydraWithValueHead(nn.Cell):
             else:
                 attention_mask = self.model.cast(attention_mask, mstype.float32)
                 attention_mask = self.model.slice2(attention_mask, (0, 0, 0),
-                                                    (batch_size, seq_length, seq_length),
-                                                    (1, 1, 1))
+                                                   (batch_size, seq_length, seq_length),
+                                                   (1, 1, 1))
 
             if input_position is None:
                 input_position = F.tuple_to_array(F.make_range(seq_length))
@@ -276,7 +282,7 @@ class CausalLMHydraWithValueHead(nn.Cell):
                 value = self.reshape(value, (batch_size, seq_length))
                 return logprobs_labels, value
             return logprobs_labels
-        
+
         # used in generate
         elif return_full_logit == False:
             outputs = self.process_logits2(logits, input_position, is_first_iteration, use_past)
@@ -285,6 +291,7 @@ class CausalLMHydraWithValueHead(nn.Cell):
         # used in pretrain loss
         else:
             return logits
+
 
 class Sampler(nn.Cell):
     def __init__(self):
@@ -299,20 +306,22 @@ class Sampler(nn.Cell):
             frequency_list = self.zeros((vocab_size, ), mindspore.float32)
         log_probs_revised = log_probs.reshape(batch_size, vocab_size)
         if repetition_penalty != 1:
-                log_probs_revised = log_probs - frequency_list * repetition_penalty - \
-                                    (frequency_list > 0) * repetition_penalty
+            log_probs_revised = log_probs - frequency_list * repetition_penalty - \
+                (frequency_list > 0) * repetition_penalty
         logits = F.pow(Tensor(np.e), log_probs_revised)
         probs, p_args = self.top_k(logits, top_k)
 
         norm = probs.sum(-1, keepdims=True)
         avg = F.broadcast_to(Tensor(1/top_k), probs.shape).to(mstype.float32)
-        probs = F.select(norm==0, avg, probs/norm)
+        probs = F.select(norm == 0, avg, probs/norm)
         return probs, p_args
+
 
 class PPO_model(nn.Cell, GeneratorMixin):
     """
     PPO_model
     """
+
     def __init__(self, ppo_config, policy_model, critic_model):
         super(PPO_model, self).__init__()
         self.ppo_config = ppo_config
@@ -323,7 +332,7 @@ class PPO_model(nn.Cell, GeneratorMixin):
         self.critic_model = critic_model
         self.stack = P.Stack(axis=1)
         self.allreduce_sum = P.AllReduce(ReduceOp.SUM)
-        self.reduce_sum = P.ReduceSum(keep_dims=False) 
+        self.reduce_sum = P.ReduceSum(keep_dims=False)
 
         self.reduce_mean = P.ReduceMean(keep_dims=False)
         self.rsqrt = P.Rsqrt()
@@ -342,9 +351,9 @@ class PPO_model(nn.Cell, GeneratorMixin):
         self.exp = P.Exp()
         self.stop_grad = P.StopGradient()
         self.gamma = 1
-        self.lam=0.95
+        self.lam = 0.95
         self.size = P.Size()
-        self.sum_and_count = Tensor([[1,1]])        
+        self.sum_and_count = Tensor([[1, 1]])
         self.approx_kl = Parameter([0.0, ], requires_grad=False)
         self.get_attention_mask = AttentionMask(ppo_config.seq_length)
 
@@ -384,7 +393,7 @@ class PPO_model(nn.Cell, GeneratorMixin):
 
         start = F.shape(query_tensors)[1] - 1
         end = start + response_length
-        
+
         logprobs = logprobs[:, start:end]
         values_pred = values_pred[:, start:end]
         mask = attention_mask[:, start:end]

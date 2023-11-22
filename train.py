@@ -15,17 +15,14 @@
 # limitations under the License.
 # ==============================================================================
 """train."""
-import os
-import time
-import math
+
 import argparse
-import mindspore
 from mindspore import context
 import mindspore.communication.management as D
-import mindspore.nn as nn
 from mindrlhf.trainer.ppo_trainer import PPOTrainer
 from mindrlhf.utils.configs import init_configs, init_network_and_optimizer, init_ppo_dataset
 from mindrlhf.utils.utils import set_pipeline_parallel_context
+
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -84,13 +81,15 @@ def get_args():
     args_opt = parser.parse_args()
     return args_opt
 
+
 def run_rlhf(args):
-    context.set_context(save_graphs=args.save_graphs, save_graphs_path=args.save_graphs_path, mode=args.mode, 
-                        device_target=args.device_target, enable_compile_cache=False, 
+    context.set_context(save_graphs=args.save_graphs, save_graphs_path=args.save_graphs_path, mode=args.mode,
+                        device_target=args.device_target, enable_compile_cache=False,
                         compile_cache_path="./cache", max_call_depth=4096,
                         memory_optimize_level='O1', max_device_memory=args.max_device_memory)
 
-    ppo_config, sft_model_config, ref_model_config, critic_model_config, rm_model_config = init_configs(args)
+    ppo_config, sft_model_config, ref_model_config, critic_model_config, rm_model_config = init_configs(
+        args)
     set_pipeline_parallel_context(parallel_mode=ppo_config.parallel_mode, full_batch=ppo_config.full_batch,
                                   optimizer_shard=True, stage_num=sft_model_config.parallel_config.pipeline_stage,
                                   enable_alltoall=ppo_config.enable_alltoall)
@@ -107,6 +106,7 @@ def run_rlhf(args):
         trainer.save_checkpoint(rank_id, epoch)
 
     print("PPO train done!")
+
 
 if __name__ == "__main__":
     args = get_args()

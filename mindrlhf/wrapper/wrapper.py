@@ -88,6 +88,7 @@ def tensor_shard_grad_scale_pipeline(scale, grad, accu_grad):
     new_grad = F.depend(new_grad, F.assign(accu_grad, F.zeros_like(accu_grad)))
     return new_grad
 
+
 class TrainOneStepWithLossScaleCell(TrainOneStepWithLossScaleCell):
     """
     Encapsulation class of PanguAlpha network training.
@@ -100,6 +101,7 @@ class TrainOneStepWithLossScaleCell(TrainOneStepWithLossScaleCell):
         optimizer (Optimizer): Optimizer for updating the weights.
         scale_update_cell (Cell): Cell to do the loss scale. Default: None.
     """
+
     def __init__(self,
                  network,
                  optimizer,
@@ -124,7 +126,7 @@ class TrainOneStepWithLossScaleCell(TrainOneStepWithLossScaleCell):
             self.clip = ClipByGlobalNorm(self.weights, config, clip_norm=10.0)
         self.cast = P.Cast()
 
-    def construct(self, 
+    def construct(self,
                   query_tensors, response_tensors, logprobs, values, rewards,
                   advantages, returns, pretrain_ids, loss_mask, attention_mask,
                   layer_past=None, sens=None):
@@ -132,7 +134,8 @@ class TrainOneStepWithLossScaleCell(TrainOneStepWithLossScaleCell):
         lr = self.learning_rate(self.global_step)
         weights = self.weights
         # Forward process
-        loss = self.network(query_tensors, response_tensors, logprobs, values, rewards, advantages, returns, pretrain_ids, loss_mask, attention_mask)
+        loss = self.network(query_tensors, response_tensors, logprobs, values, rewards,
+                            advantages, returns, pretrain_ids, loss_mask, attention_mask)
         scaling_sens = self.scale_sense
 
         # alloc status and clear should be right before gradoperation
@@ -165,6 +168,7 @@ class TrainOneStepWithLossScaleCell(TrainOneStepWithLossScaleCell):
                 self.optimizer(grads)
         return loss, lr, cond, scaling_sens.value()
 
+
 class TrainPipelineWithLossScaleCell(nn.Cell):
     """
     Encapsulation class of network training.
@@ -177,6 +181,7 @@ class TrainPipelineWithLossScaleCell(nn.Cell):
         optimizer (Optimizer): Optimizer for updating the weights.
         scale_update_cell (Cell): Cell to do the loss scale. Default: None.
     """
+
     def __init__(self, network, optimizer, config, scale_update_cell=None, enable_global_norm=True):
         super(TrainPipelineWithLossScaleCell, self).__init__(auto_prefix=False)
         self.config = config
