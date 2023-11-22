@@ -1,5 +1,6 @@
 __all__ = ['IteratorStore']
 
+
 class IteratorStore:
     def __init__(self, store):
         self._index = 0

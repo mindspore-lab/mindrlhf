@@ -1,6 +1,6 @@
 
 from dataclasses import dataclass
-import mindspore.common.dtype as mstype
+
 
 @dataclass
 class PPOConfig:
@@ -52,7 +52,7 @@ class PPOConfig:
     end_lr: float = 1e-10
     warmup_step: int = 3200
     decay_steps: int = 200000
-    opt_offload: bool =False
+    opt_offload: bool = False
     mind_dataset_dir: str = "/path/train.mindrecord"
     use_past: bool = False
     inference_micro_size: int = 1

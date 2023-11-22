@@ -2,7 +2,6 @@ import copy
 import math
 from dataclasses import asdict, make_dataclass
 import mindspore
-import mindspore.communication.management as D
 import mindspore.nn as nn
 from mindspore.nn.wrap.loss_scale import DynamicLossScaleUpdateCell
 from mindspore.nn.wrap.cell_wrapper import PipelineCell, _VirtualDatasetCell, MicroBatchInterleaved
@@ -19,11 +18,12 @@ from mindrlhf.wrapper import TrainOneStepWithLossScaleCell, TrainPipelineWithLos
 
 __all__ = ['combine_config', 'init_configs']
 
+
 def set_weight_decay(params):
     """
     Set weight decay coefficient, zero for bias and layernorm, 1e-1 for rest
     """
-    decay_filter = lambda x: 'layernorm' not in x.name.lower() and "bias" not in x.name.lower()
+    def decay_filter(x): return 'layernorm' not in x.name.lower() and "bias" not in x.name.lower()
     decay_params = list(filter(decay_filter, params))
     other_params = list(filter(lambda x: not decay_filter(x), params))
     group_params = [{
@@ -37,6 +37,7 @@ def set_weight_decay(params):
     }]
     return group_params
 
+
 def combine_config(ppo_config, model_config):
     config_temp = asdict(ppo_config)
     for k, v in model_config.items():
@@ -45,6 +46,7 @@ def combine_config(ppo_config, model_config):
     config_temp['max_prompt_length'] = config_temp['seq_length'] - config_temp['max_decode_length']
     PPOConfig = make_dataclass("PPOConfig", [(key, type(value)) for key, value in config_temp.items()])
     return PPOConfig(**config_temp)
+
 
 def init_configs(args=None):
     ppo_config = PPOConfig()
@@ -94,6 +96,7 @@ def init_configs(args=None):
 
     return ppo_config, sft_model_config, ref_model_config, critic_model_config, rm_model_config
 
+
 def init_network_and_optimizer(trainer):
     '''init network and optimizer'''
     sft_model_config = trainer.sft_model_config
@@ -102,7 +105,7 @@ def init_network_and_optimizer(trainer):
         print("pipeline cell")
         ppo_with_loss_net = PipelineCell(MicroBatchInterleaved(trainer.ppo_model,
                                                                ppo_config.micro_batch_interleaved),
-                                                               sft_model_config.parallel_config.micro_batch_num)
+                                         sft_model_config.parallel_config.micro_batch_num)
     else:
         print("non-pipeline cell")
         ppo_with_loss_net = trainer.ppo_model
@@ -118,9 +121,8 @@ def init_network_and_optimizer(trainer):
         optimizer = AdamWeightDecayOp(group_params, learning_rate=lr, eps=ppo_config.eps, beta1=ppo_config.beta1,
                                       beta2=ppo_config.beta2, param_init_type=sft_model_config.param_init_type)
     else:
-        optimizer = FP32StateAdamWeightDecay(group_params, learning_rate=lr, beta1=ppo_config.beta1, 
+        optimizer = FP32StateAdamWeightDecay(group_params, learning_rate=lr, beta1=ppo_config.beta1,
                                              beta2=ppo_config.beta2, eps=ppo_config.eps)
-
 
     loss_scale_value = math.pow(2, 12)
     update_cell = DynamicLossScaleUpdateCell(loss_scale_value=loss_scale_value,
@@ -136,10 +138,11 @@ def init_network_and_optimizer(trainer):
                                                       scale_update_cell=update_cell, enable_global_norm=True)
     return ppo_with_grad
 
+
 def init_ppo_dataset(trainer):
     ppo_config = trainer.ppo_config
     sft_model_config = trainer.sft_model_config
-    column_names=["query_tensors", "response_tensors", "logprobs",
+    column_names = ["query_tensors", "response_tensors", "logprobs",
                     "values", "rewards", "advantages", "returns",
                     "pretrain_ids", "loss_mask", "attention_mask"]
     if ppo_config.save_data_file and 'stages' in ppo_config.align_type:
@@ -150,6 +153,6 @@ def init_ppo_dataset(trainer):
     dataset = dataset.project(columns=column_names)
     type_cast_op_bool = TypeCast(mindspore.bool_)
     dataset = dataset.map(operations=type_cast_op_bool, input_columns="attention_mask")
-    dataset = dataset.batch(batch_size=ppo_config.batch_size \
-        * sft_model_config.parallel_config.data_parallel)
+    dataset = dataset.batch(batch_size=ppo_config.batch_size
+                            * sft_model_config.parallel_config.data_parallel)
     return dataset

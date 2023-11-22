@@ -35,6 +35,7 @@ _scaler_one = Tensor(1, mstype.int32)
 _scaler_ten = Tensor(10, mstype.float32)
 _cpu_div = P.RealDiv().add_prim_attr("primitive_target", "CPU")
 
+
 @_adam_opt.register("Function", "Tensor", "Tensor", "Tensor", "Tensor", "Tensor", "Tensor", "Tensor", "Tensor",
                     "Tensor", "Tensor", "Bool", "Bool")
 def _update_run_kernel(opt, clip_value, beta1, beta2, eps, lr, weight_decay,
@@ -136,6 +137,7 @@ class AdamWeightDecayOp(Optimizer):
         >>> loss = nn.SoftmaxCrossEntropyWithLogits()
         >>> model = Model(net, loss_fn=loss, optimizer=optim)
    """
+
     def __init__(self, params, learning_rate=1e-3, beta1=0.9, beta2=0.999, eps=1e-6, weight_decay=0.0,
                  clip_norm=1.0, param_init_type=mstype.float32):
         super(AdamWeightDecayOp, self).__init__(learning_rate, params, weight_decay)
