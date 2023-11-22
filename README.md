@@ -2,13 +2,10 @@
 
 # MindRLHF
 
-[![CI](https://github.com/mindspore-lab/mindcv/actions/workflows/ci.yml/badge.svg)](https://github.com/mindspore-lab/mindcv/actions/workflows/ci.yml)
-[![PyPI](https://img.shields.io/pypi/pyversions/mindcv)](https://pypi.org/project/mindcv)
-[![docs](https://img.shields.io/badge/docs-latest-blue)](https://mindcv.readthedocs.io/en/latest)
-[![license](https://img.shields.io/github/license/mindspore-lab/mindcv.svg)](https://github.com/mindspore-lab/mindcv/blob/main/LICENSE.md)
-[![open issues](https://img.shields.io/github/issues/mindspore-lab/mindcv)](https://github.com/mindspore-lab/mindrlhf/issues)
+[![license](https://img.shields.io/github/license/mindspore-lab/mindrlhf.svg)](https://github.com/mindspore-lab/mindrlhf/blob/main/LICENSE.md)
+[![open issues](https://img.shields.io/github/issues/mindspore-lab/mindrlhf)](https://github.com/mindspore-lab/mindrlhf/issues)
 [![PRs](https://img.shields.io/badge/PRs-welcome-pink.svg)](https://github.com/mindspore-lab/mindrlhf/pulls)
-[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+[![Code style: autopep8](https://img.shields.io/badge/code_style-autopep8-blue)](https://github.com/hhatto/autopep8)
 
 English | [中文](README_CN.md)
 
@@ -44,36 +41,36 @@ MindRLHF architecture diagram is as follows:
 ![framework](https://github.com/mindspore-lab/mindrlhf/blob/master/images/framework.jpg)
 
 ## Installation
-Current version `0.1.0` can be used directly.
+Current version `0.3.0` can be used directly.
 
 There are some requirements for MindRLHF:
 
 |  requirements   | version|
 |  ----   | ----        |
-| MindSpore    | r2.0   |
-| Mindformers | r0.3    |
+| MindSpore    | r2.2   |
+| Mindformers | r0.8    |
 
 ## Supported Models
 
-Current version of MindRLHF: `0.1.0`
+Current version of MindRLHF: `0.3.0`
 
-The current version integrates Pangu-alpha(13B) and GPT2 models, and users can explore these two models. In the future, we will provide more models such as LLAMA, BLOOM, GLM, etc. To help users quickly implement their own applications. The specific supported list is shown below:
+The current version integrates Pangu-alpha(13B), GPT2, Baichuan2(7B/13B) models, and users can explore these two models. In the future, we will provide more models such as LLAMA, BLOOM, GLM, etc. To help users quickly implement their own applications. The specific supported list is shown below:
 
 Table 1： The models and scales supported in MindRLHF
-|  Models   | Pangu-alpha |  GPT2   |
-|  ----   | ----        |  ----   |
-| Scales    | 2.6B/13B    | 124M    |
-| Parallel | Y          | N       |
-| Device    | NPU         | NPU     |
+|  Models   | Pangu-alpha |  GPT2   |  Baichuan2   |
+|  ----     | ----        |  ----   |  ----        |
+| Scales    | 2.6B/13B    | 124M    | 7B/13B       |
+| Parallel  | Y           | Y       | Y            |
+| Device    | NPU         | NPU     | NPU          |
 
 The support of models for different training stages is shown in the following table:
 
 Table 2： The models and stages supported in MindRLHF
-|  Stages     | Pangu-alpha    |  GPT2   |
-|  ----        | ----           |  ----   |
-| SFT| Y              | Y       |
-| RM  | Y              | Y       |
-| RLHF  | Y              | Y       |
+|  Stages     | Pangu-alpha    |  GPT2   |  Baichuan2   |
+|  ----       | ----           |  ----   |  ----        |
+| SFT         | Y              | Y       | Y            |
+| RM          | Y              | Y       | Y            |
+| RLHF        | Y              | Y       | Y            |
 
 In the future, we will integrate more models such as LLAMA, GLM, BLOOM, etc.
 
@@ -81,48 +78,22 @@ In the future, we will integrate more models such as LLAMA, GLM, BLOOM, etc.
 
 * Reward model training: a `GPT2` based reward model training tutorial is listed in 'examples'.
 
-* RLHF fine-tuning: here is an example for RLHF fine-tuning with `GPT2` in `MindRLHF`:
+* RLHF fine-tuning: here is an example for RLHF fine-tuning in `MindRLHF`:
 
 ```python
-import mindspore
-from mindspore import context
-from ppo_trainer import MindPPOTrainer, train_loop
-from utils.models.ppo_models import PPOConfig, PPOTrainOneStepCell
-from utils.models.reward_model import RMConfig
-from dataset import create_ppo_dataset, create_experience_dataset
-from utils.optimizer import init_optimizer
-from utils.models.model_utils import init_models
-
-
-context.set_context(device_target='Ascend', device_id=0, mode=mindspore.GRAPH_MODE)
-
-# Initialize config
-config = PPOConfig()
-rm_config = RMConfig()
-# Initialize dataset
-train_dataset, eval_dataset = create_experience_dataset(config)
-# Initialize models
-ppo_model, ref_model, reward_model = init_models(config, rm_config)
-# Initialize optimizer
-optimizer = init_optimizer(ppo_model, config)
-ppo_with_grad = PPOTrainOneStepCell(ppo_model, optimizer)
-# Initialize ppo
-trainer = MindPPOTrainer(config, rm_config, train_dataset, eval_dataset, ppo_model, ref_model, reward_model,
-                         optimizer, ppo_with_grad)
-
-for t in range(config.epochs):
-    print(f"Epoch {t}\n-------------------------------")
-    # experience collect
-    trainer.generate_experience(num_rollouts=config.num_rollouts)
-    # PPO dataset
-    dataset = create_ppo_dataset(trainer.ppo_elements, config)
-    # PPO train
-    trainer.train(dataset)
-    if t % 5 == 4:
-        # eval
-        reward_mean = trainer.evaluate()
-        print("reward_mean is ", reward_mean)
-print("RLHF Train and Eval Done!")
+ppo_config, sft_model_config, ref_model_config, critic_model_config, rm_model_config = init_configs(
+    args)
+trainer = PPOTrainer(ppo_config=ppo_config, sft_model_config=sft_model_config, ref_model_config=ref_model_config,
+                        critic_model_config=critic_model_config, rm_model_config=rm_model_config)
+ppo_with_grad = init_network_and_optimizer(trainer)
+rank_id = D.get_rank()
+for epoch in range(ppo_config.epochs):
+    # sampling
+    trainer.make_experience(num_rollouts=ppo_config.num_rollouts)
+    dataset = init_ppo_dataset(trainer)
+    # use data sink to accelerate
+    trainer.train(ppo_with_grad, dataset, epoch)
+    trainer.save_checkpoint(rank_id, epoch)
 ```
 
 ## Contribution
