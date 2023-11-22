@@ -13,8 +13,15 @@
 # limitations under the License.
 # ============================================================================
 """MindRLHF models."""
-from .ppo_models import *
-from .reward_model import *
-__all__ = []
-__all__.extend(ppo_models.__all__)
-__all__.extend(reward_model.__all__)
+from .ppo_models import PPO_model, LogprobsOfLabels, ProcessLogits, \
+                        FixedKLController, CausalLMHydraWithValueHead, \
+                        Sampler
+from .reward_model import RewardModel, CriticModel
+__all__ = ['PPO_model', 
+           'LogprobsOfLabels',
+           'ProcessLogits',
+           'FixedKLController',
+           'CausalLMHydraWithValueHead',
+           'Sampler',
+           'RewardModel',
+           'CriticModel',]

@@ -1,6 +1,5 @@
 __all__ = ['IteratorStore']
 
-
 class IteratorStore:
     def __init__(self, store):
         self._index = 0
@@ -11,8 +10,8 @@ class IteratorStore:
         if self._index >= self.length:
             raise StopIteration
         else:
-            item = (self.store[self._index].query_tensors,
-                    self.store[self._index].response_tensors,
+            item = (self.store[self._index].query_tensor,
+                    self.store[self._index].response_tensor,
                     self.store[self._index].logprobs,
                     self.store[self._index].values,
                     self.store[self._index].rewards,

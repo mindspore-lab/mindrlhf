@@ -10,9 +10,10 @@
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
-# limitations under the License
+# limitations under the License.
 # ============================================================================
 """PPO model"""
+import os
 import numpy as np
 
 import mindspore
@@ -26,13 +27,12 @@ from mindformers.modules.transformer import AttentionMask
 from mindformers.core.loss.loss import CrossEntropyLoss
 from mindformers.models.bloom import BloomLMHeadModel, BloomConfig
 from mindformers.models.pangualpha import PanguAlphaHeadModel, PanguAlphaConfig
-from mindformers.models.llama.llama_config import LlamaConfig
 from mindformers.modules.layers import Linear
-from mindrlhf.models.baichuan2.baichuan2_7b import Baichuan7BV2ForCausalLM
-from mindrlhf.utils.generator import GeneratorMixin
 
-__all__ = ['PPO_model', 'LogprobsOfLabels', 'ProcessLogits', 'FixedKLController',
-           'CausalLMHydraWithValueHead', 'Sampler',]
+from mindrlhf.utils.generator import GeneratorMixin
+# project_root = os.path.abspath(
+#     os.path.dirname(os.path.realpath(__file__)) + os.path.sep + "..")
+# print('project_root:', project_root)
 
 
 class LogprobsOfLabels(nn.Cell):
@@ -43,13 +43,11 @@ class LogprobsOfLabels(nn.Cell):
         self.gatherd = P.GatherD()
         self.unsqueeze = P.ExpandDims()
         self.squeeze = P.Squeeze(axis=-1)
-
     def construct(self, logits, labels):
         labels = self.cast(labels, mindspore.int32)
         logprobs = self.log_softmax(logits)
         logprobs_labels = self.gatherd(logprobs, -1, self.unsqueeze(labels, -1))
         return self.squeeze(logprobs_labels)
-
 
 class ProcessLogits(nn.Cell):
     def __init__(self):
@@ -70,9 +68,10 @@ class ProcessLogits(nn.Cell):
         outputs = F.tensor_pow(self.e, outputs)
         return outputs
 
-
 class AdaptiveKLController(nn.Cell):
     """Adaptive KL Controller as described in Ziegler et al. "Fine-Tuning Language Models from Human Preferences"
+    Reference: Section 2.2 https://arxiv.org/pdf/1909.08593.pdf#page=2
+    Source: https://github.com/openai/lm-human-preferences/blob/master/lm_human_preferences/train_policy.py
     """
 
     def __init__(self, init_kl_coef: float, target: float, horizon: int):
@@ -90,7 +89,6 @@ class AdaptiveKLController(nn.Cell):
         self.value *= mult
         return self.value
 
-
 class FixedKLController(nn.Cell):
     """Fixed KL controller."""
 
@@ -100,9 +98,10 @@ class FixedKLController(nn.Cell):
 
     def construct(self, current, n_steps):
         """Returns updated KL coefficient, βₜ₊₁.
+        Arguments:
+            current: The current KL value between the newest policy and the initial policy.
         """
         return Tensor(0.0, mstype.float16)
-
 
 class CausalLMHydraWithValueHead(nn.Cell):
     """
@@ -115,12 +114,11 @@ class CausalLMHydraWithValueHead(nn.Cell):
             model_config.dropout_rate = 0.0
         self.model_config = model_config
         self.ppo_config = ppo_config
+        print("sft model_type: ", type(model_config), isinstance(model_config, PanguAlphaConfig))
         if isinstance(model_config, PanguAlphaConfig):
             self.model_type = 'pangu'
         elif isinstance(model_config, BloomConfig):
             self.model_type = 'bloom'
-        elif isinstance(model_config, LlamaConfig):
-            self.model_type = 'baichuan'
         else:
             raise NotImplementedError("only support pangu and bloom")
         if self.model_type == 'pangu':
@@ -131,10 +129,7 @@ class CausalLMHydraWithValueHead(nn.Cell):
             self.model = BloomLMHeadModel(model_config)
             self.backbone = self.model.transformer
             self.lm_head = self.model.head
-        elif self.model_type == 'baichuan':
-            self.model = Baichuan7BV2ForCausalLM(model_config)
-            self.backbone = self.model.model
-            self.lm_head = self.model.lm_head
+        
         self.lm_head.pipeline_stage = model_config.parallel_config.pipeline_stage - 1
         dp = model_config.parallel_config.data_parallel
         mp = model_config.parallel_config.model_parallel
@@ -173,10 +168,9 @@ class CausalLMHydraWithValueHead(nn.Cell):
         self.argmax = P.Argmax(-1).shard(((dp, mp),))
         self.expand_dims = P.ExpandDims().shard(((dp, 1, 1),))
         self.sub_shard = P.Sub().shard(((), (1, 1, 1)))
-
+        
         self.minus_one = Tensor([-1], mstype.int32)
-        self.v_head0 = Linear(self.ppo_config.hidden_size, 2*self.ppo_config.hidden_size,
-                              activation='relu', has_bias=True)
+        self.v_head0 = Linear(self.ppo_config.hidden_size, 2*self.ppo_config.hidden_size, activation='relu', has_bias=True)
         self.v_head1 = Linear(2*self.ppo_config.hidden_size, 1, has_bias=True)
 
     def process_logits(self, logits, current_index=None, is_first_iteration=False, use_past=False):
@@ -198,6 +192,7 @@ class CausalLMHydraWithValueHead(nn.Cell):
             index = current_index.view(-1,)
             logits = self.gather(logits, index, 0)
         top_token_id = self.argmax_no_shard(logits)
+        # top_token_id = self.argmax(logits)
         top_token_id = top_token_id.view(-1, 1)
         return top_token_id
 
@@ -206,19 +201,19 @@ class CausalLMHydraWithValueHead(nn.Cell):
         samples = samples[:, 1:]
         logprobs = self.logsoftmax_1(logits)
         logprobs = self.squeeze_no_shard(self.gatherd(logprobs, -1, self.unsqueeze(samples, -1)))
-
+        
         return logprobs
 
     def construct(self,
                   # inputs for the llm
-                  input_ids,
-                  input_position=None,
+                  input_ids, 
+                  input_position=None, 
                   position_ids=None,
                   attention_mask=None,
-                  init_reset=True,
+                  init_reset=True, 
                   batch_valid_length=None,
                   # inputs for `process_logits`
-                  is_first_iteration=False,
+                  is_first_iteration=False, 
                   use_past=False,
                   # inputs for choosing the output branch
                   samples=None,
@@ -226,6 +221,10 @@ class CausalLMHydraWithValueHead(nn.Cell):
                   return_value=False):
         batch_size, seq_length = input_ids.shape
         if self.model_type == 'pangu':
+            # if self.model.phase == 'train':
+            #     seq_length = seq_length - 1
+            #     tokens = self.model.slice(input_ids, (0, 0), (batch_size, seq_length), (1, 1))
+            # else:
             tokens = input_ids
             input_mask = F.cast(self.model.not_equal(tokens, self.model.pad_token_id),
                                 mstype.float32)
@@ -234,8 +233,8 @@ class CausalLMHydraWithValueHead(nn.Cell):
             else:
                 attention_mask = self.model.cast(attention_mask, mstype.float32)
                 attention_mask = self.model.slice2(attention_mask, (0, 0, 0),
-                                                   (batch_size, seq_length, seq_length),
-                                                   (1, 1, 1))
+                                                    (batch_size, seq_length, seq_length),
+                                                    (1, 1, 1))
 
             if input_position is None:
                 input_position = F.tuple_to_array(F.make_range(seq_length))
@@ -251,9 +250,6 @@ class CausalLMHydraWithValueHead(nn.Cell):
             # [batch_size, seq_length, vocab_size]
             output_states, embedding_table = self.backbone(tokens, input_position, attention_mask,
                                                            init_reset, batch_valid_length)
-        elif self.model_type == 'baichuan':
-            tokens = input_ids
-            output_states = self.backbone(tokens, input_position, init_reset, batch_valid_length)
         else:
             if self.model.phase == "train":
                 tokens = self.model.stridedslice(input_ids, (0, 0), (batch_size, seq_length - 1), (1, 1))
@@ -266,23 +262,23 @@ class CausalLMHydraWithValueHead(nn.Cell):
                 input_mask = self.model.not_equal(tokens, self.model.eos_token_id).astype(mstype.float32)
 
             output_states, embedding_table = self.backbone(tokens, input_mask, init_reset, batch_valid_length)
-
-        if self.model_type == 'baichuan':
-            logits_2d = self.lm_head(output_states)
-        else:
-            logits_2d = self.lm_head(output_states, embedding_table)
+        
+        logits_2d = self.lm_head(output_states, embedding_table)
 
         logits = self.reshape(logits_2d, (batch_size, seq_length, -1))
+
+        # This model is used in three places, generate, make_experience, and ppo
+        # to reduce memory, we return the required output in different places
 
         # used in inference of make_experience and ppo
         if samples is not None:
             logprobs_labels = self.logprobs_of_labels(logits, samples, batch_size, seq_length)
             if return_value == True:
-                value = self.v_head1(self.v_head0(output_states))
-                value = self.reshape(value, (batch_size, seq_length))
+                value = self.v_head1(self.v_head0(logits))
+                value = self.squeeze(value)
                 return logprobs_labels, value
             return logprobs_labels
-
+        
         # used in generate
         elif return_full_logit == False:
             outputs = self.process_logits2(logits, input_position, is_first_iteration, use_past)
@@ -291,7 +287,6 @@ class CausalLMHydraWithValueHead(nn.Cell):
         # used in pretrain loss
         else:
             return logits
-
 
 class Sampler(nn.Cell):
     def __init__(self):
@@ -306,16 +301,15 @@ class Sampler(nn.Cell):
             frequency_list = self.zeros((vocab_size, ), mindspore.float32)
         log_probs_revised = log_probs.reshape(batch_size, vocab_size)
         if repetition_penalty != 1:
-            log_probs_revised = log_probs - frequency_list * repetition_penalty - \
-                (frequency_list > 0) * repetition_penalty
+                log_probs_revised = log_probs - frequency_list * repetition_penalty - \
+                                    (frequency_list > 0) * repetition_penalty
         logits = F.pow(Tensor(np.e), log_probs_revised)
         probs, p_args = self.top_k(logits, top_k)
 
         norm = probs.sum(-1, keepdims=True)
         avg = F.broadcast_to(Tensor(1/top_k), probs.shape).to(mstype.float32)
-        probs = F.select(norm == 0, avg, probs/norm)
+        probs = F.select(norm==0, avg, probs/norm)
         return probs, p_args
-
 
 class PPO_model(nn.Cell, GeneratorMixin):
     """
@@ -327,12 +321,13 @@ class PPO_model(nn.Cell, GeneratorMixin):
         self.ppo_config = ppo_config
         self.pretrain_coef = self.ppo_config.pretrain_coef
         self.use_past = self.ppo_config.use_past
+        print("use_past: ", self.use_past)
         self.pad_token_id = Tensor(ppo_config.pad_token_id, mstype.int32)
         self.policy_model = policy_model
         self.critic_model = critic_model
         self.stack = P.Stack(axis=1)
         self.allreduce_sum = P.AllReduce(ReduceOp.SUM)
-        self.reduce_sum = P.ReduceSum(keep_dims=False)
+        self.reduce_sum = P.ReduceSum(keep_dims=False) 
 
         self.reduce_mean = P.ReduceMean(keep_dims=False)
         self.rsqrt = P.Rsqrt()
@@ -351,9 +346,11 @@ class PPO_model(nn.Cell, GeneratorMixin):
         self.exp = P.Exp()
         self.stop_grad = P.StopGradient()
         self.gamma = 1
-        self.lam = 0.95
+        self.lam=0.95
         self.size = P.Size()
-        self.sum_and_count = Tensor([[1, 1]])
+        self.sum_and_count = Tensor([[1,1]])
+        # self.attention_mask = Tensor(np.ones((1, 1024)), mstype.float32)
+        
         self.approx_kl = Parameter([0.0, ], requires_grad=False)
         self.get_attention_mask = AttentionMask(ppo_config.seq_length)
 
@@ -382,18 +379,34 @@ class PPO_model(nn.Cell, GeneratorMixin):
                   pretrain_ids,
                   loss_mask,
                   attention_mask):
+        # print("data: ", query_tensors, response_tensors, logprobs, values, rewards, attention_mask)
         old_logprobs = logprobs
         old_rewards = rewards
         old_values = values
         response_length = F.shape(old_rewards)[1]
         tokens = response_tensors
+
+        '''input_mask = F.cast(F.not_equal(tokens, self.pad_token_id), mstype.float32)
+        bs, seq_length = F.shape(response_tensors)
+        input_position = F.tuple_to_array(F.make_range(seq_length))
+        input_position = P.Tile()(input_position, (bs, 1))
+        attention_mask_pangu = self.get_attention_mask(input_mask)'''
+
+        # attention_mask = self.attention_mask
         logprobs = self.policy_model(tokens, samples=tokens)
         tokens = self.depend(tokens, logprobs)
         values_pred = self.critic_model(tokens)
 
         start = F.shape(query_tensors)[1] - 1
         end = start + response_length
-
+        
+        '''logprobs, values_pred, mask = (
+                logprobs[:, start:end],
+                values_pred[:, start:end],
+            )
+        values_pred = values_pred[:, start:end]
+        mask = attention_mask[:, start:end]'''
+        
         logprobs = logprobs[:, start:end]
         values_pred = values_pred[:, start:end]
         mask = attention_mask[:, start:end]
@@ -437,6 +450,8 @@ class PPO_model(nn.Cell, GeneratorMixin):
         mask,
     ):
         """PPO objective function.
+        References:
+        - https://stable-baselines.readthedocs.io/en/master/modules/ppo2.html
         """
         values_clipped = ops.clip_by_value(
             values,
@@ -453,6 +468,8 @@ class PPO_model(nn.Cell, GeneratorMixin):
         log_ratio = (logprobs - old_logprobs) * mask
 
         ratio = self.exp(log_ratio)
+        # Unbiased KL-div estimates (`k3`). Ref: http://joschu.net/blog/kl-approx.html
+        
         approx_kl = self.reduce_mean((ratio - 1) - log_ratio)
         approx_kl = self.stop_grad(approx_kl)
 

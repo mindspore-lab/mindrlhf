@@ -26,7 +26,7 @@ from mindspore.context import ParallelMode
 from mindspore.nn.wrap.grad_reducer import DistributedGradReducer
 from mindspore.communication.management import get_group_size
 from mindspore.parallel._utils import _get_enable_parallel_optimizer
-from mindrlhf.utils.utils import GlobalNorm, ClipByGlobalNorm
+from mindrlhf.utils import GlobalNorm, ClipByGlobalNorm
 
 GRADIENT_CLIP_TYPE = 1
 GRADIENT_CLIP_VALUE = 1.0
@@ -88,7 +88,6 @@ def tensor_shard_grad_scale_pipeline(scale, grad, accu_grad):
     new_grad = F.depend(new_grad, F.assign(accu_grad, F.zeros_like(accu_grad)))
     return new_grad
 
-
 class TrainOneStepWithLossScaleCell(TrainOneStepWithLossScaleCell):
     """
     Encapsulation class of PanguAlpha network training.
@@ -101,7 +100,6 @@ class TrainOneStepWithLossScaleCell(TrainOneStepWithLossScaleCell):
         optimizer (Optimizer): Optimizer for updating the weights.
         scale_update_cell (Cell): Cell to do the loss scale. Default: None.
     """
-
     def __init__(self,
                  network,
                  optimizer,
@@ -126,7 +124,7 @@ class TrainOneStepWithLossScaleCell(TrainOneStepWithLossScaleCell):
             self.clip = ClipByGlobalNorm(self.weights, config, clip_norm=10.0)
         self.cast = P.Cast()
 
-    def construct(self,
+    def construct(self, 
                   query_tensors, response_tensors, logprobs, values, rewards,
                   advantages, returns, pretrain_ids, loss_mask, attention_mask,
                   layer_past=None, sens=None):
@@ -134,8 +132,7 @@ class TrainOneStepWithLossScaleCell(TrainOneStepWithLossScaleCell):
         lr = self.learning_rate(self.global_step)
         weights = self.weights
         # Forward process
-        loss = self.network(query_tensors, response_tensors, logprobs, values, rewards,
-                            advantages, returns, pretrain_ids, loss_mask, attention_mask)
+        loss = self.network(query_tensors, response_tensors, logprobs, values, rewards, advantages, returns, pretrain_ids, loss_mask, attention_mask)
         scaling_sens = self.scale_sense
 
         # alloc status and clear should be right before gradoperation
@@ -169,9 +166,9 @@ class TrainOneStepWithLossScaleCell(TrainOneStepWithLossScaleCell):
         return loss, lr, cond, scaling_sens.value()
 
 
-class TrainPipelineWithLossScaleCell(nn.Cell):
+class PanguAlphaTrainPipelineWithLossScaleCell(nn.Cell):
     """
-    Encapsulation class of network training.
+    Encapsulation class of PanguAlpha network training.
 
     Append an optimizer to the training network after that the construct
     function can be called to create the backward graph.
@@ -181,9 +178,8 @@ class TrainPipelineWithLossScaleCell(nn.Cell):
         optimizer (Optimizer): Optimizer for updating the weights.
         scale_update_cell (Cell): Cell to do the loss scale. Default: None.
     """
-
     def __init__(self, network, optimizer, config, scale_update_cell=None, enable_global_norm=True):
-        super(TrainPipelineWithLossScaleCell, self).__init__(auto_prefix=False)
+        super(PanguAlphaTrainPipelineWithLossScaleCell, self).__init__(auto_prefix=False)
         self.config = config
         self.network = network
         self.network.add_flags(defer_inline=True)
@@ -195,8 +191,6 @@ class TrainPipelineWithLossScaleCell(nn.Cell):
                                     sens_param=True)
         self.reducer_flag = False
         self.allreduce = P.AllReduce()
-        self.learning_rate = self.optimizer.learning_rate
-        self.global_step = self.optimizer.global_step
         self.parallel_mode = context.get_auto_parallel_context("parallel_mode")
         if self.parallel_mode in [ParallelMode.DATA_PARALLEL, ParallelMode.HYBRID_PARALLEL]:
             self.reducer_flag = True
@@ -232,15 +226,13 @@ class TrainPipelineWithLossScaleCell(nn.Cell):
 
     @C.add_flags(has_effect=True)
     def construct(self,
-                  query_tensors, response_tensors, logprobs, values, rewards, advantages,
-                  returns, pretrain_ids, loss_mask, attention_mask,
+                  query_tensors, response_tensors, logprobs, values, rewards, attention_mask,
+                  advantages, returns, 
                   past=None,
                   sens=None):
         """Defines the computation performed."""
-        lr = self.learning_rate(self.global_step)
         weights = self.weights
-        loss = self.network(query_tensors, response_tensors, logprobs, values, rewards, advantages,
-                            returns, pretrain_ids, loss_mask, attention_mask)
+        loss = self.network(query_tensors, response_tensors, logprobs, values, rewards, attention_mask, advantages, returns)
         if sens is None:
             scaling_sens = self.loss_scale
             scaling_sens = self.reshape(scaling_sens, (1,))
@@ -249,9 +241,9 @@ class TrainPipelineWithLossScaleCell(nn.Cell):
         # alloc status and clear should be right before gradoperation
         init = self.alloc_status()
         status_clear = self.clear_before_grad(init)
-        grads = self.grad(self.network, weights)(query_tensors, response_tensors, logprobs, values, rewards, advantages,
-                                                 returns, pretrain_ids, loss_mask, attention_mask,
-                                                 self.cast(scaling_sens / self.micro_size, mstype.float32))
+        grads = self.grad(self.network, weights)(query_tensors, response_tensors, logprobs, values, rewards, attention_mask, advantages, returns,
+                                                 self.cast(scaling_sens / self.micro_size,
+                                                           mstype.float32))
         init = F.depend(init, grads)
         get_status = self.get_status(init)
         init = F.depend(init, get_status)
@@ -286,4 +278,4 @@ class TrainPipelineWithLossScaleCell(nn.Cell):
                 self.optimizer(grads, clip_value)
             else:
                 self.optimizer(grads)
-        return loss, lr, overflow, scaling_sens.value()
+        return loss, overflow, scaling_sens.value()

@@ -33,7 +33,6 @@ from mindformers.tools.register import MindFormerConfig
 from mindformers.dataset import RewardModelDataset
 from mindformers.dataset import check_dataset_config
 
-
 def run(args):
     """ calculate accuracy on test dataset """
 
@@ -94,7 +93,6 @@ def run(args):
         print(f"acc: [{accuracy}]; avg acc: [{total_acc / count}]", flush=True)
     print(f"acc: [{total_acc / count}]", flush=True)
 
-
 if __name__ == "__main__":
     work_path = os.path.dirname(os.path.abspath(__file__))
     parser = argparse.ArgumentParser()
@@ -120,3 +118,4 @@ if __name__ == "__main__":
         args_.config = os.path.join(work_path, args_.config)
 
     run(args_)
+    
