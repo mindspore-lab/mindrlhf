@@ -2,13 +2,10 @@
 
 # MindRLHF
 
-[![CI](https://github.com/mindspore-lab/mindcv/actions/workflows/ci.yml/badge.svg)](https://github.com/mindspore-lab/mindcv/actions/workflows/ci.yml)
-[![PyPI](https://img.shields.io/pypi/pyversions/mindcv)](https://pypi.org/project/mindcv)
-[![docs](https://img.shields.io/badge/docs-latest-blue)](https://mindcv.readthedocs.io/en/latest)
-[![license](https://img.shields.io/github/license/mindspore-lab/mindcv.svg)](https://github.com/mindspore-lab/mindcv/blob/main/LICENSE.md)
-[![open issues](https://img.shields.io/github/issues/mindspore-lab/mindcv)](https://github.com/mindspore-lab/mindrlhf/issues)
+[![license](https://img.shields.io/github/license/mindspore-lab/mindrlhf.svg)](https://github.com/mindspore-lab/mindrlhf/blob/main/LICENSE.md)
+[![open issues](https://img.shields.io/github/issues/mindspore-lab/mindrlhf)](https://github.com/mindspore-lab/mindrlhf/issues)
 [![PRs](https://img.shields.io/badge/PRs-welcome-pink.svg)](https://github.com/mindspore-lab/mindrlhf/pulls)
-[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+[![Code style: autopep8](https://img.shields.io/badge/code_style-autopep8-blue)](https://github.com/hhatto/autopep8)
 
 [English](README.md) | 中文
 
@@ -40,35 +37,35 @@ MindRLHF架构图如下：
 ![framework](https://github.com/mindspore-lab/mindrlhf/blob/master/images/framework.jpg)
 
 ## 安装
-当前版本`0.1.10`无需安装，用户下载即可使用。
+当前版本`0.3.0`无需安装，用户下载即可使用。
 当前版本所依赖框架:
 |  依赖   | 版本|
 |  ----   | ----        |
-| MindSpore    | r2.0   |
-| Mindformers | r0.3    |
+| MindSpore    | r2.2   |
+| Mindformers | r0.8    |
 
 
 ## 支持列表
 
-当前 MindRLHF 版本：`0.1.0`
+当前 MindRLHF 版本：`0.3.0`
 
-当前版本集成了Pangu-alpha(13B)、GPT2模型，用户可以基于这两个模型进行探索。未来，我们将提供更多模型如LLAMA、BLOOM、GLM等，帮助用户快速实现自己的应用。具体支持列表如下所示：
+当前版本集成了Pangu-alpha(13B)、GPT2、Baichuan2(7B/13B) 模型，用户可以基于这两个模型进行探索。未来，我们将提供更多模型如LLAMA、BLOOM、GLM等，帮助用户快速实现自己的应用。具体支持列表如下所示：
 
 表 1： 当前MindSpore RLHF支持的模型和规模
-|  模型   | Pangu-alpha |  GPT2   |
-|  ----   | ----        |  ----   |
-| 规模    | 2.6B/13B    | 124M    |
-| 支持并行 | Y          | N       |
-| 硬件    | NPU         | NPU     |
+|  模型   | Pangu-alpha |  GPT2   | Baichuan2 |
+|  ----   | ----        |  ----   |  ----   |
+| 规模    | 2.6B/13B    | 124M    | 7B/13B    |
+| 支持并行 | Y          | Y       | Y       |
+| 硬件    | NPU         | NPU     | NPU     |
 
 当前流程下，不同模型对不同训练阶段的支持情况如下表所示：
 
 表 2： 当前MindSpore RLHF支持的模型和阶段
-|  训练阶段     | Pangu-alpha    |  GPT2   |
-|  ----        | ----           |  ----   |
-| 预训练模型训练| Y              | Y       |
-| 奖励模型训练  | Y              | Y       |
-| 强化学习训练  | Y              | Y       |
+|  训练阶段     | Pangu-alpha    |  GPT2   |  Baichuan2   |
+|  ----        | ----           |  ----   |  ----   |
+| 预训练模型训练| Y              | Y       | Y       |
+| 奖励模型训练  | Y              | Y       | Y       |
+| 强化学习训练  | Y              | Y       | Y       |
 
 未来，我们将打通更多的模型，如`LLAMA`、`GLM`、`BLOOM`等，敬请期待。
 
@@ -76,48 +73,22 @@ MindRLHF架构图如下：
 
 * 奖励模型训练: 在`examples`文件夹中展示了如何结合`GPT2`进行奖励模型微调的过程。
 
-* RLHF 微调: 下面是`MindRLHF`使用`GPT2`进行微调的过程，示例代码如下：
+* RLHF 微调: 下面是`MindRLHF`使用模型进行微调的过程，示例代码如下：
 
 ```python
-import mindspore
-from mindspore import context
-from ppo_trainer import MindPPOTrainer, train_loop
-from utils.models.ppo_models import PPOConfig, PPOTrainOneStepCell
-from utils.models.reward_model import RMConfig
-from dataset import create_ppo_dataset, create_experience_dataset
-from utils.optimizer import init_optimizer
-from utils.models.model_utils import init_models
-
-
-context.set_context(device_target='Ascend', device_id=0, mode=mindspore.GRAPH_MODE)
-
-# 初始化配置
-config = PPOConfig()
-rm_config = RMConfig()
-# 初始化数据集
-train_dataset, eval_dataset = create_experience_dataset(config)
-# 初始化模型
-ppo_model, ref_model, reward_model = init_models(config, rm_config)
-# 初始化优化器
-optimizer = init_optimizer(ppo_model, config)
-ppo_with_grad = PPOTrainOneStepCell(ppo_model, optimizer)
-# 初始化PPO训练
-trainer = MindPPOTrainer(config, rm_config, train_dataset, eval_dataset, ppo_model, ref_model, reward_model,
-                         optimizer, ppo_with_grad)
-
-for t in range(config.epochs):
-    print(f"Epoch {t}\n-------------------------------")
-    # 经验收集
-    trainer.generate_experience(num_rollouts=config.num_rollouts)
-    # PPO 数据重建
-    dataset = create_ppo_dataset(trainer.ppo_elements, config)
-    # PPO 训练
-    trainer.train(dataset)
-    if t % 5 == 4:
-        # 评估
-        reward_mean = trainer.evaluate()
-        print("reward_mean is ", reward_mean)
-print("RLHF Train and Eval Done!")
+ppo_config, sft_model_config, ref_model_config, critic_model_config, rm_model_config = init_configs(
+    args)
+trainer = PPOTrainer(ppo_config=ppo_config, sft_model_config=sft_model_config, ref_model_config=ref_model_config,
+                        critic_model_config=critic_model_config, rm_model_config=rm_model_config)
+ppo_with_grad = init_network_and_optimizer(trainer)
+rank_id = D.get_rank()
+for epoch in range(ppo_config.epochs):
+    # sampling
+    trainer.make_experience(num_rollouts=ppo_config.num_rollouts)
+    dataset = init_ppo_dataset(trainer)
+    # use data sink to accelerate
+    trainer.train(ppo_with_grad, dataset, epoch)
+    trainer.save_checkpoint(rank_id, epoch)
 ```
 
 
