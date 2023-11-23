@@ -25,6 +25,7 @@ from mindspore.ops import operations as P
 from mindformers.modules.transformer import AttentionMask
 from mindformers.core.loss.loss import CrossEntropyLoss
 from mindformers.models.bloom import BloomLMHeadModel, BloomConfig
+from mindformers.models.gpt2 import GPT2Config, GPT2LMHeadModel
 from mindformers.models.pangualpha import PanguAlphaHeadModel, PanguAlphaConfig
 from mindformers.models.llama.llama_config import LlamaConfig
 from mindformers.modules.layers import Linear
@@ -121,6 +122,8 @@ class CausalLMHydraWithValueHead(nn.Cell):
             self.model_type = 'bloom'
         elif isinstance(model_config, LlamaConfig):
             self.model_type = 'baichuan'
+        elif isinstance(model_config, GPT2Config):
+            self.model_type = 'gpt2'
         else:
             raise NotImplementedError("only support pangu and bloom")
         if self.model_type == 'pangu':
@@ -135,6 +138,11 @@ class CausalLMHydraWithValueHead(nn.Cell):
             self.model = Baichuan7BV2ForCausalLM(model_config)
             self.backbone = self.model.model
             self.lm_head = self.model.lm_head
+        elif self.model_type == 'gpt2':
+            self.model = GPT2LMHeadModel(model_config)
+            self.backbone = self.model.backbone
+            self.lm_head = self.model.head
+        
         self.lm_head.pipeline_stage = model_config.parallel_config.pipeline_stage - 1
         dp = model_config.parallel_config.data_parallel
         mp = model_config.parallel_config.model_parallel
@@ -254,6 +262,19 @@ class CausalLMHydraWithValueHead(nn.Cell):
         elif self.model_type == 'baichuan':
             tokens = input_ids
             output_states = self.backbone(tokens, input_position, init_reset, batch_valid_length)
+        elif self.model_type == 'gpt2':
+            tokens = input_ids
+            if attention_mask is None:
+                attention_mask = self.model.not_equal(input_ids, self.model.eos_token_id)
+            attention_mask = self.cast(attention_mask, mstype.float32)
+            attention_mask = self.model.get_attention_mask(attention_mask)
+            if not self.model.is_first_iteration:
+                attention_mask = self.model.tile(self.model.all_ones_attention_mask, (batch_size, 1, 1))
+            #
+            # # [batch_size, seq_length, vocab_size]
+            output_states, embedding_table = self.backbone(
+                tokens, attention_mask, input_position=input_position,
+                init_reset=init_reset, batch_valid_length=batch_valid_length)
         else:
             if self.model.phase == "train":
                 tokens = self.model.stridedslice(input_ids, (0, 0), (batch_size, seq_length - 1), (1, 1))
@@ -340,7 +361,7 @@ class PPO_model(nn.Cell, GeneratorMixin):
 
         self.log_softmax = P.LogSoftmax(axis=-1)
         self.gather = P.GatherD()
-        self.unsqueeze = P.ExpandDims()
+        self.unsqueeze = P.ExpandDims().shard(((1, 1),))
         self.squeeze = P.Squeeze(axis=-1)
 
         self.cliprange_value = ppo_config.cliprange_value
