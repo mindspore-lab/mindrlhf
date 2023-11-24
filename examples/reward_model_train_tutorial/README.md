@@ -34,11 +34,13 @@ response有3种类型，分别为拒绝&正向建议(safe and responsibility) > 
 
 本代码仓提供了CValues-Comparison数据集的处理脚本，方便用户一键式将json、parque格式的数据集文件进行编码和预处理，并存储为MindsSpore配套的MindRecord格式文件，执行命令为：
 ```shell
-python cvalues_comparison.py --model model_name --src_file /path/to/train.jsonl --dst_file /path/to/mindrecord
+python cvalues_comparison.py [--configs]
 ```
-  - model_name: 使用的大语言模型名称，这里是"GPT2"
-  - src_file: CValues-Comparison数据路径
-  - dst_file: 转换后的mind record db数据路径
+脚本提供如下参数：
+  - model_name：编码使用的 tokenizer 名称或 tokenizer 文件对应路径。目前仅支持基于 mindformers 实现的 tokenizer。
+  - src_file：原始数据文件。当前仅支持 jsonl 格式文件。
+  - dst_file：输出 mindrecord 文件路径。
+
 注意：执行该转换脚本前需要先安装 mindformers, mindspore
      [mindspore 安装](https://www.mindspore.cn/install)
      [mindformers 安装](https://gitee.com/mindspore/mindformers#%E4%BA%8Cmindformers%E5%AE%89%E8%A3%85)
@@ -54,7 +56,7 @@ python cvalues_comparison.py --model model_name --src_file /path/to/train.jsonl 
 |loss_mask|指示样本对中差异的位置，用于后续loss计算|
 |end_ind|指示样本对中有效token的最长位置下标|
    
-具体转换结果如下 
+转换后数据集样例：
 ```
 {
 'chosen_input_ids': array([ 7136, 10967,  3549, ...,     2,     2,     2]), 
@@ -66,6 +68,7 @@ python cvalues_comparison.py --model model_name --src_file /path/to/train.jsonl 
 'end_ind': 119
 }
 ```
+
 #### openai_summarize_comparisons
 [openai_summarize_comparisons](https://huggingface.co/datasets/CarperAI/openai_summarize_comparisons)数据集，示例如下。  
 |prompt (string)|chosen (string)|rejected (string)|  
