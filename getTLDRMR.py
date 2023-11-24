@@ -11,49 +11,48 @@ MR_PATH = "TLDR_data_ms"
 
 def writeMR(samples, original_samples, file_name):
     mr_list = []
-    batch_size = 1
-    for i in range(0, len(samples), batch_size):
-        sub_samples = samples[i: i + batch_size]
-        sub_samples = ["<|startoftext|>" + chosen + "<|endoftext|>" for chosen in sub_samples]
-        encodings_dict = rw_tokenizer(
-            sub_samples,
+    pad_token_id = 0
+    for i in range(0, len(samples)):
+        prompt = samples[i]
+        prompt = "<|startoftext|>" + prompt + "<|endoftext|>"
+        prompts_dict = rw_tokenizer(
+            prompt,
             truncation=True,
             max_length=500,
-            padding="max_length",
             return_tensors="pt",
         )
-        # input_ids = encodings_dict["input_ids"].to(rw_device)
-        # attn_masks = encodings_dict["attention_mask"].to(rw_device)
+        prompt_ids = prompts_dict["input_ids"].to(rw_device)
+        prompt_ids = np.array(prompt_ids)
+        prompt_len = prompt_ids.shape[-1]
+        prompt_ids = np.pad(prompt_ids, (0, 500 - prompt_ids.shape[-1]),
+                            'constant', constant_values=(0, pad_token_id))
 
-        # mr_list.append({"input_ids":input_ids.numpy(),
-        #                 "attention_mask":attn_masks.numpy()})
-        prompt_ids = encodings_dict["input_ids"].to(rw_device)
-        prompt_mask = encodings_dict["attention_mask"].to(rw_device)
-
-        sub_samples_2 = original_samples[i: i + batch_size]
-        sub_samples_2 = ["<|startoftext|>" + chosen + "<|endoftext|>" for chosen in sub_samples_2]
-        encodings_dict_2 = rw_tokenizer(
-            sub_samples_2,
+        response = original_samples[i]
+        response = "<|startoftext|>" + response + "<|endoftext|>"
+        response_dict = rw_tokenizer(
+            response,
             truncation=True,
             max_length=550,
             padding="max_length",
             return_tensors="pt",
         )
 
-        original_sample_ids = encodings_dict_2["input_ids"].to(rw_device)
-        original_sample_mask = encodings_dict_2["attention_mask"].to(rw_device)
+        pretrain_ids = response_dict["input_ids"].to(rw_device)
+        pretrain_ids = np.array(pretrain_ids)
+        loss_mask = response_dict["attention_mask"].to(rw_device)
+        loss_mask = np.array(loss_mask)
+        loss_mask[:prompt_len] = 0.0
+        
 
-        mr_list.append({"prompt_ids": prompt_ids.numpy(),
-                        "prompt_mask": prompt_mask.numpy(),
-                        "original_sample_ids": original_sample_ids.numpy(),
-                        "original_sample_mask": original_sample_mask.numpy()})
+        mr_list.append({"prompt_ids": prompt_ids,
+                        "pretrain_ids": pretrain_ids,
+                        "loss_mask": loss_mask})
 
     # define columns
     nlp_schema = {
         "prompt_ids": {"type": "int64", "shape": [-1]},
-        "prompt_mask": {"type": "int64", "shape": [-1]},
-        "original_sample_ids": {"type": "int64", "shape": [-1]},
-        "original_sample_mask": {"type": "int64", "shape": [-1]},
+        "pretrain_ids": {"type": "int64", "shape": [-1]},
+        "loss_mask": {"type": "float32", "shape": [-1]},
     }
 
     mr_writer = FileWriter(file_name, shard_num=1, overwrite=True)
@@ -195,9 +194,9 @@ if __name__ == '__main__':
     if not os.path.exists(os.path.join(MR_PATH, "train")):
         os.makedirs(os.path.join(MR_PATH, "train"))
     # uncomment when using transformers tokenizer
-    original_scores = writeMR(train_prompts, original_samples, "TLDR_data/train/tldr_train_prompts.mindrecord")
+    writeMR(train_prompts, original_samples, "TLDR_data/train/tldr_train_prompts.mindrecord")
     # uncomment when using mindspore tokenizer
-    # original_scores = ms_writeMR(original_samples, "TLDR_data_ms/train/tldr_train.mindrecord")
+    # ms_writeMR(original_samples, "TLDR_data_ms/train/tldr_train.mindrecord")
 
     # process validation set
     original_samples = []
@@ -218,6 +217,6 @@ if __name__ == '__main__':
     if not os.path.exists(os.path.join(MR_PATH, "val")):
         os.makedirs(os.path.join(MR_PATH, "val"))
     # uncomment when using transformers tokenizer
-    original_scores = writeMR(val_prompts, original_samples, "TLDR_data/val/tldr_val_prompts.mindrecord")
+    writeMR(val_prompts, original_samples, "TLDR_data/val/tldr_val_prompts.mindrecord")
     # uncomment when using mindspore tokenizer
-    # original_scores = ms_writeMR(val_prompts, "TLDR_data_ms/val/tldr_val.mindrecord")
+    # ms_writeMR(val_prompts, "TLDR_data_ms/val/tldr_val.mindrecord")
