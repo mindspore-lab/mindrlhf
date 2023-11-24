@@ -5,6 +5,7 @@ from mindformers.modules.layers import Linear
 from mindspore.ops import operations as P
 from mindspore.ops import functional as F
 
+from mindformers.models.gpt2 import GPT2Config, GPT2LMHeadModel
 from mindformers.models.bloom import BloomLMHeadModel, BloomConfig
 from mindformers.models.pangualpha import PanguAlphaHeadModel, PanguAlphaConfig
 from mindformers.models.llama.llama_config import LlamaConfig
@@ -30,6 +31,8 @@ class RewardModel(nn.Cell):
             self.model_type = 'bloom'
         elif isinstance(config, LlamaConfig):
             self.model_type = 'baichuan'
+        elif isinstance(config, GPT2Config):
+            self.model_type = 'gpt2'
         else:
             raise NotImplementedError("only support pangu and bloom")
         print("reward model model_type: ", self.model_type)
@@ -43,6 +46,9 @@ class RewardModel(nn.Cell):
         elif self.model_type == 'baichuan':
             self.model = Baichuan7BV2ForCausalLM(config)
             self.backbone = self.model.model
+        elif self.model_type == 'gpt2':
+            self.model = GPT2LMHeadModel(config)
+            self.backbone = self.model.backbone
 
         self.v_head0 = Linear(in_channels=config.hidden_size,
                               out_channels=1,
@@ -54,6 +60,7 @@ class RewardModel(nn.Cell):
         self.v_head0.pipeline_stage = config.parallel_config.pipeline_stage - 1
         self.expand_dims = P.ExpandDims().shard(((dp, 1, 1),))
         self.sub_shard = P.Sub().shard(((), (1, 1, 1)))
+        self.gather = P.Gather().shard(((1, 1),))
 
     def infer(self,
               input_ids,
@@ -98,6 +105,18 @@ class RewardModel(nn.Cell):
         elif self.model_type == 'baichuan':
             tokens = input_ids
             output_states = self.backbone(tokens, input_position, init_reset, batch_valid_length)
+        elif self.model_type == 'gpt2':
+            tokens = input_ids
+            if attention_mask is None:
+                attention_mask = self.model.not_equal(input_ids, self.model.eos_token_id)
+            attention_mask = self.cast(attention_mask, mstype.float32)
+            attention_mask = self.model.get_attention_mask(attention_mask)
+            if not self.model.is_first_iteration:
+                attention_mask = self.model.tile(self.model.all_ones_attention_mask, (batch_size, 1, 1))
+
+            output_states, embedding_table = self.backbone(
+                tokens, attention_mask, input_position=input_position,
+                init_reset=init_reset, batch_valid_length=batch_valid_length)
         else:
             input_mask = self.model.not_equal(input_ids, self.model.eos_token_id).astype(mstype.float32)
             output_states, _ = self.backbone(input_ids, input_mask, init_reset, batch_valid_length)
@@ -131,6 +150,8 @@ class CriticModel(nn.Cell):
             self.model_type = 'bloom'
         elif isinstance(config, LlamaConfig):
             self.model_type = 'baichuan'
+        elif isinstance(config, GPT2Config):
+            self.model_type = 'gpt2'
         else:
             raise NotImplementedError("only support pangu and bloom")
         print("reward model model_type: ", self.model_type)
@@ -144,6 +165,9 @@ class CriticModel(nn.Cell):
         elif self.model_type == 'baichuan':
             self.model = Baichuan7BV2ForCausalLM(config)
             self.backbone = self.model.model
+        elif self.model_type == 'gpt2':
+            self.model = GPT2LMHeadModel(config)
+            self.backbone = self.model.backbone
 
         self.v_head0 = Linear(in_channels=config.hidden_size,
                               out_channels=1,
@@ -189,7 +213,23 @@ class CriticModel(nn.Cell):
             else:
                 tokens = input_ids
             output_states = self.backbone(tokens, input_position)
+        elif self.model_type == 'gpt2':
+            tokens = input_ids
+            if attention_mask is None:
+                attention_mask = self.model.not_equal(input_ids, self.model.eos_token_id)
+            attention_mask = self.cast(attention_mask, mstype.float32)
+            attention_mask = self.model.get_attention_mask(attention_mask)
+            if not self.model.is_first_iteration:
+                attention_mask = self.model.tile(self.model.all_ones_attention_mask, (batch_size, 1, 1))
+
+            init_reset = True
+            batch_valid_length = None
+            output_states, embedding_table = self.backbone(
+                tokens, attention_mask, input_position=input_position,
+                init_reset=init_reset, batch_valid_length=batch_valid_length)
         else:
+            init_reset = True
+            batch_valid_length = None
             input_mask = self.model.not_equal(input_ids, self.model.eos_token_id).astype(mstype.float32)
             output_states, _ = self.backbone(input_ids, input_mask, init_reset, batch_valid_length)
 
