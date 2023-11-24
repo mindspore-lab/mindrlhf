@@ -14,7 +14,6 @@ def load_json_file(file_path):
             raw_data.append(item)
     return raw_data
 
-
 def process_data(tokenizer, raw_data, max_prompt_length, seq_length, pad_token_id):
     template = ("{prompt}{response}")
 
@@ -45,8 +44,8 @@ def process_data(tokenizer, raw_data, max_prompt_length, seq_length, pad_token_i
                             prompt_ids.shape[-1]), 'constant', constant_values=(0, pad_token_id))
         pretrain_ids = np.pad(pretrain_ids, (0, seq_length -
                               pretrain_ids.shape[-1]), 'constant', constant_values=(0, pad_token_id))
-        loss_mask = np.pad(
-            loss_mask, (0, seq_length-loss_mask.shape[-1]), 'constant', constant_values=(0, pad_token_id))
+        loss_mask = np.pad(loss_mask, (0, seq_length-loss_mask.shape[-1]),
+                           'constant', constant_values=(0, pad_token_id))
         loss_mask[:prompt_len] = 0.0
 
         sample["prompt_ids"] = prompt_ids
@@ -54,7 +53,6 @@ def process_data(tokenizer, raw_data, max_prompt_length, seq_length, pad_token_i
         sample["loss_mask"] = loss_mask
 
         yield sample
-
 
 def write_mindrecord(args):
     raw_data = load_json_file(args.file_path)
@@ -82,7 +80,6 @@ def write_mindrecord(args):
 
     writer.commit()
     print("Transformation finished! Output file refer: {}".format(args.output_path))
-
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -114,7 +111,6 @@ def get_args():
         help='pad token id.')
     args_opt = parser.parse_args()
     return args_opt
-
 
 if __name__ == "__main__":
     args = get_args()
