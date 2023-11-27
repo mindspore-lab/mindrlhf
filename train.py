@@ -88,15 +88,11 @@ def run_rlhf(args):
                         compile_cache_path="./cache", max_call_depth=4096,
                         memory_optimize_level='O1', max_device_memory=args.max_device_memory)
 
-    ppo_config, sft_model_config, ref_model_config, critic_model_config, rm_model_config = init_configs(
-        args)
-    set_pipeline_parallel_context(parallel_mode=ppo_config.parallel_mode, full_batch=ppo_config.full_batch,
-                                  optimizer_shard=True, stage_num=sft_model_config.parallel_config.pipeline_stage,
-                                  enable_alltoall=ppo_config.enable_alltoall)
+    ppo_config, sft_model_config, ref_model_config, critic_model_config, rm_model_config = init_configs(args)
+    rank_id, _ = set_pipeline_parallel_context(ppo_config)
     trainer = PPOTrainer(ppo_config=ppo_config, sft_model_config=sft_model_config, ref_model_config=ref_model_config,
                          critic_model_config=critic_model_config, rm_model_config=rm_model_config)
     ppo_with_grad = init_network_and_optimizer(trainer)
-    rank_id = D.get_rank()
     for epoch in range(ppo_config.epochs):
         # sampling
         trainer.make_experience(num_rollouts=ppo_config.num_rollouts)

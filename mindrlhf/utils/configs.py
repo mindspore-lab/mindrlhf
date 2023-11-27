@@ -147,12 +147,12 @@ def init_ppo_dataset(trainer):
                     "pretrain_ids", "loss_mask", "attention_mask"]
     if ppo_config.save_data_file and 'stages' in ppo_config.align_type:
         dataset = MindDataset(dataset_files=ppo_config.save_data_file, shuffle=False)
+        dataset = dataset.project(columns=column_names)
+        type_cast_op_bool = TypeCast(mindspore.bool_)
+        dataset = dataset.map(operations=type_cast_op_bool, input_columns="attention_mask")
     else:
         pipeline = IteratorStore(trainer.store)
         dataset = GeneratorDataset(pipeline, column_names=column_names)
-    dataset = dataset.project(columns=column_names)
-    type_cast_op_bool = TypeCast(mindspore.bool_)
-    dataset = dataset.map(operations=type_cast_op_bool, input_columns="attention_mask")
     dataset = dataset.batch(batch_size=ppo_config.batch_size
                             * sft_model_config.parallel_config.data_parallel)
     return dataset
