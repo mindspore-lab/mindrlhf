@@ -16,9 +16,6 @@
 """
 MindRLHF utils
 """
-import argparse
-import ast
-import os
 import time
 import hashlib
 import numpy as np
@@ -49,16 +46,24 @@ __all__ = ['set_pipeline_parallel_context', 'IsLastStage', 'IsLastStage',
 
 
 def set_pipeline_parallel_context(ppo_config):
-    r"""Set pipeline parallel context."""
+    """Set pipeline parallel context."""
     D.init()
     device_num = D.get_group_size()
     rank_id = D.get_rank()
     context.reset_auto_parallel_context()
+
+    if hasattr(ppo_config.parallel_config, 'optimizer_shard'):
+        optimizer_shard = bool(ppo_config.parallel_config.optimizer_shard)
+    elif hasattr(ppo_config.parallel, 'enable_parallel_optimizer'):
+        optimizer_shard = bool(ppo_config.parallel.enable_parallel_optimizer)
+    else:
+        optimizer_shard = True
+
     context.set_auto_parallel_context(
         parallel_mode=ppo_config.parallel_mode, gradients_mean=False,
         full_batch=bool(ppo_config.full_batch), loss_repeated_mean=True,
         device_num=device_num,
-        enable_parallel_optimizer=bool(ppo_config.parallel_config.optimizer_shard),
+        enable_parallel_optimizer=optimizer_shard,
         pipeline_stages=ppo_config.parallel_config.pipeline_stage,
         enable_alltoall=bool(ppo_config.enable_alltoall),
         strategy_ckpt_save_file='strategy.ckpt')
@@ -323,34 +328,6 @@ class LearningRate(LearningRateSchedule):
         else:
             lr = decay_lr
         return lr
-
-
-def download_data(src_data_url, tgt_data_path, rank):
-    """
-        Download the dataset from the obs.
-        src_data_url (Str): should be the dataset path in the obs
-        tgt_data_path (Str): the local dataset path
-        rank (Int): the current rank id
-
-    """
-    cache_url = tgt_data_path
-    EXEC_PATH = '/tmp'
-    if rank % 8 == 0:
-        import moxing as mox
-        print("Modify the time out from 300 to 30000")
-        print("begin download dataset", flush=True)
-
-        if not os.path.exists(cache_url):
-            os.makedirs(cache_url, exist_ok=True)
-        mox.file.copy_parallel(src_url=src_data_url,
-                               dst_url=cache_url)
-        print("Dataset download succeed!", flush=True)
-
-        f = open("%s/install.txt" % (EXEC_PATH), 'w')
-        f.close()
-    # stop
-    while not os.path.exists("%s/install.txt" % (EXEC_PATH)):
-        time.sleep(1)
 
 
 class TimePoint:

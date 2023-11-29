@@ -4,17 +4,12 @@ import mindspore.common.dtype as mstype
 from mindformers.modules.layers import Linear
 from mindspore.ops import operations as P
 from mindspore.ops import functional as F
-
-from mindformers.models.gpt2 import GPT2Config, GPT2LMHeadModel
-from mindformers.models.bloom import BloomLMHeadModel, BloomConfig
-from mindformers.models.pangualpha import PanguAlphaHeadModel, PanguAlphaConfig
-from mindformers.models.llama.llama_config import LlamaConfig
-from mindrlhf.models.baichuan2.baichuan2_7b import Baichuan7BV2ForCausalLM
+from .base_model import BaseModel
 
 __all__ = ['RewardModel', 'CriticModel',]
 
 
-class RewardModel(nn.Cell):
+class RewardModel(BaseModel):
     def __init__(self, config):
         super(RewardModel, self).__init__()
         self.output_dtype = mstype.float16
@@ -25,31 +20,7 @@ class RewardModel(nn.Cell):
         self.squeeze = ops.Squeeze(axis=-1)
         self.reshape = P.Reshape()
         self.pad_token_id = config.pad_token_id
-        if isinstance(config, PanguAlphaConfig):
-            self.model_type = 'pangu'
-        elif isinstance(config, BloomConfig):
-            self.model_type = 'bloom'
-        elif isinstance(config, LlamaConfig):
-            self.model_type = 'baichuan'
-        elif isinstance(config, GPT2Config):
-            self.model_type = 'gpt2'
-        else:
-            raise NotImplementedError("only support pangu and bloom")
-        print("reward model model_type: ", self.model_type)
-
-        if self.model_type == 'pangu':
-            self.model = PanguAlphaHeadModel(config)
-            self.backbone = self.model.backbone
-        elif self.model_type == 'bloom':
-            self.model = BloomLMHeadModel(config)
-            self.backbone = self.model.transformer
-        elif self.model_type == 'baichuan':
-            self.model = Baichuan7BV2ForCausalLM(config)
-            self.backbone = self.model.model
-        elif self.model_type == 'gpt2':
-            self.model = GPT2LMHeadModel(config)
-            self.backbone = self.model.backbone
-
+        self.select_reward_model(config)
         self.v_head0 = Linear(in_channels=config.hidden_size,
                               out_channels=1,
                               has_bias=False).to_float(mstype.float16)
@@ -117,6 +88,12 @@ class RewardModel(nn.Cell):
             output_states, embedding_table = self.backbone(
                 tokens, attention_mask, input_position=input_position,
                 init_reset=init_reset, batch_valid_length=batch_valid_length)
+        elif self.model_type == 'llama':
+            if self.model.phase == "train":
+                tokens = self.model.slice(input_ids, (0, 0), (batch_size, seq_length - 1), (1, 1))
+            else:
+                tokens = input_ids
+            output_states = self.backbone(tokens, input_position, init_reset, batch_valid_length)
         else:
             input_mask = self.model.not_equal(input_ids, self.model.eos_token_id).astype(mstype.float32)
             output_states, _ = self.backbone(input_ids, input_mask, init_reset, batch_valid_length)
@@ -133,7 +110,7 @@ class RewardModel(nn.Cell):
         return preferred_end_scores
 
 
-class CriticModel(nn.Cell):
+class CriticModel(BaseModel):
     def __init__(self, config):
         super(CriticModel, self).__init__()
         self.output_dtype = mstype.float16
@@ -144,31 +121,7 @@ class CriticModel(nn.Cell):
         self.squeeze = ops.Squeeze(axis=-1)
         self.reshape = P.Reshape()
         self.pad_token_id = config.pad_token_id
-        if isinstance(config, PanguAlphaConfig):
-            self.model_type = 'pangu'
-        elif isinstance(config, BloomConfig):
-            self.model_type = 'bloom'
-        elif isinstance(config, LlamaConfig):
-            self.model_type = 'baichuan'
-        elif isinstance(config, GPT2Config):
-            self.model_type = 'gpt2'
-        else:
-            raise NotImplementedError("only support pangu and bloom")
-        print("reward model model_type: ", self.model_type)
-
-        if self.model_type == 'pangu':
-            self.model = PanguAlphaHeadModel(config)
-            self.backbone = self.model.backbone
-        elif self.model_type == 'bloom':
-            self.model = BloomLMHeadModel(config)
-            self.backbone = self.model.transformer
-        elif self.model_type == 'baichuan':
-            self.model = Baichuan7BV2ForCausalLM(config)
-            self.backbone = self.model.model
-        elif self.model_type == 'gpt2':
-            self.model = GPT2LMHeadModel(config)
-            self.backbone = self.model.backbone
-
+        self.select_critic_model(config)
         self.v_head0 = Linear(in_channels=config.hidden_size,
                               out_channels=1,
                               has_bias=False).to_float(mstype.float16)
@@ -227,6 +180,12 @@ class CriticModel(nn.Cell):
             output_states, embedding_table = self.backbone(
                 tokens, attention_mask, input_position=input_position,
                 init_reset=init_reset, batch_valid_length=batch_valid_length)
+        elif self.model_type == 'llama':
+            if self.model.phase == "train":
+                tokens = self.model.slice(input_ids, (0, 0), (batch_size, seq_length - 1), (1, 1))
+            else:
+                tokens = input_ids
+            output_states = self.backbone(tokens, input_position, init_reset=None, batch_valid_length=None)
         else:
             init_reset = True
             batch_valid_length = None
