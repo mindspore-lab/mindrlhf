@@ -64,29 +64,38 @@ def init_configs(args=None):
     build_parallel_config(config)
     sft_model_config = AutoConfig.from_pretrained(sft_model_path)
     sft_model_config.parallel_config = copy.deepcopy(config.parallel_config)
+    sft_model_config.parallel = copy.deepcopy(config.parallel)
     sft_model_config.use_past = ppo_config.use_past
+    sft_model_config.model_name = config.trainer.model_name
+
     ref_model_config = AutoConfig.from_pretrained(sft_model_path)
     ref_model_config.parallel_config = copy.deepcopy(config.parallel_config)
+    ref_model_config.parallel = copy.deepcopy(config.parallel)
     ref_model_config.use_past = False
+    ref_model_config.model_name = config.trainer.model_name
 
     config = MindFormerConfig(critic_model_path)
     build_parallel_config(config)
     critic_model_config = AutoConfig.from_pretrained(critic_model_path)
     critic_model_config.parallel_config = copy.deepcopy(config.parallel_config)
+    critic_model_config.parallel = copy.deepcopy(config.parallel)
     critic_model_config.use_past = False
+    critic_model_config.model_name = config.trainer.model_name
 
     config = MindFormerConfig(reward_model_path)
     build_parallel_config(config)
     rm_model_config = AutoConfig.from_pretrained(reward_model_path)
     rm_model_config.parallel_config = copy.deepcopy(config.parallel_config)
+    rm_model_config.parallel = copy.deepcopy(config.parallel)
     rm_model_config.use_past = False
+    rm_model_config.model_name = config.trainer.model_name
 
     if ppo_config.use_past:
         sft_model_config.batch_size = ppo_config.chunk_size
         ref_model_config.batch_size = ppo_config.chunk_size
         critic_model_config.batch_size = ppo_config.chunk_size
         rm_model_config.batch_size = ppo_config.chunk_size
-
+    ppo_config.model_name = sft_model_config.model_name
     ppo_config = combine_config(ppo_config, sft_model_config)
     print("[PPO Configure] is: ", ppo_config, flush=True)
     print("[ACT Configure] is: ", sft_model_config, sft_model_config.parallel_config, flush=True)
@@ -148,11 +157,21 @@ def init_ppo_dataset(trainer):
     if ppo_config.save_data_file and 'stages' in ppo_config.align_type:
         dataset = MindDataset(dataset_files=ppo_config.save_data_file, shuffle=False)
         dataset = dataset.project(columns=column_names)
-        type_cast_op_bool = TypeCast(mindspore.bool_)
-        dataset = dataset.map(operations=type_cast_op_bool, input_columns="attention_mask")
     else:
         pipeline = IteratorStore(trainer.store)
         dataset = GeneratorDataset(pipeline, column_names=column_names)
+    type_cast_op_int32 = TypeCast(mindspore.int32)
+    type_cast_op_fp16 = TypeCast(mindspore.float16)
+    dataset = dataset.map(operations=type_cast_op_int32, input_columns="query_tensors")
+    dataset = dataset.map(operations=type_cast_op_int32, input_columns="response_tensors")
+    dataset = dataset.map(operations=type_cast_op_fp16, input_columns="logprobs")
+    dataset = dataset.map(operations=type_cast_op_fp16, input_columns="values")
+    dataset = dataset.map(operations=type_cast_op_fp16, input_columns="rewards")
+    dataset = dataset.map(operations=type_cast_op_fp16, input_columns="advantages")
+    dataset = dataset.map(operations=type_cast_op_fp16, input_columns="returns")
+    dataset = dataset.map(operations=type_cast_op_int32, input_columns="pretrain_ids")
+    dataset = dataset.map(operations=type_cast_op_fp16, input_columns="loss_mask")
+    dataset = dataset.map(operations=type_cast_op_fp16, input_columns="attention_mask")
     dataset = dataset.batch(batch_size=ppo_config.batch_size
                             * sft_model_config.parallel_config.data_parallel)
     return dataset

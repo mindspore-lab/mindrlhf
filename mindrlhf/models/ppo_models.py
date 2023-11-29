@@ -24,13 +24,9 @@ import mindspore.common.dtype as mstype
 from mindspore.ops import operations as P
 from mindformers.modules.transformer import AttentionMask
 from mindformers.core.loss.loss import CrossEntropyLoss
-from mindformers.models.bloom import BloomLMHeadModel, BloomConfig
-from mindformers.models.gpt2 import GPT2Config, GPT2LMHeadModel
-from mindformers.models.pangualpha import PanguAlphaHeadModel, PanguAlphaConfig
-from mindformers.models.llama.llama_config import LlamaConfig
 from mindformers.modules.layers import Linear
-from mindrlhf.models.baichuan2.baichuan2_7b import Baichuan7BV2ForCausalLM
 from mindrlhf.utils.generator import GeneratorMixin
+from .base_model import BaseModel
 
 __all__ = ['PPO_model', 'LogprobsOfLabels', 'ProcessLogits', 'FixedKLController',
            'CausalLMHydraWithValueHead', 'Sampler',]
@@ -105,7 +101,7 @@ class FixedKLController(nn.Cell):
         return Tensor(0.0, mstype.float16)
 
 
-class CausalLMHydraWithValueHead(nn.Cell):
+class CausalLMHydraWithValueHead(BaseModel):
     """
     CausalLMHydraWithValueHead
     """
@@ -116,33 +112,7 @@ class CausalLMHydraWithValueHead(nn.Cell):
             model_config.dropout_rate = 0.0
         self.model_config = model_config
         self.ppo_config = ppo_config
-        if isinstance(model_config, PanguAlphaConfig):
-            self.model_type = 'pangu'
-        elif isinstance(model_config, BloomConfig):
-            self.model_type = 'bloom'
-        elif isinstance(model_config, LlamaConfig):
-            self.model_type = 'baichuan'
-        elif isinstance(model_config, GPT2Config):
-            self.model_type = 'gpt2'
-        else:
-            raise NotImplementedError("only support pangu and bloom")
-        if self.model_type == 'pangu':
-            self.model = PanguAlphaHeadModel(model_config)
-            self.backbone = self.model.backbone
-            self.lm_head = self.model.head
-        elif self.model_type == 'bloom':
-            self.model = BloomLMHeadModel(model_config)
-            self.backbone = self.model.transformer
-            self.lm_head = self.model.head
-        elif self.model_type == 'baichuan':
-            self.model = Baichuan7BV2ForCausalLM(model_config)
-            self.backbone = self.model.model
-            self.lm_head = self.model.lm_head
-        elif self.model_type == 'gpt2':
-            self.model = GPT2LMHeadModel(model_config)
-            self.backbone = self.model.backbone
-            self.lm_head = self.model.head
-        
+        self.select_actor_model(model_config)
         self.lm_head.pipeline_stage = model_config.parallel_config.pipeline_stage - 1
         dp = model_config.parallel_config.data_parallel
         mp = model_config.parallel_config.model_parallel
@@ -259,9 +229,11 @@ class CausalLMHydraWithValueHead(nn.Cell):
             # [batch_size, seq_length, vocab_size]
             output_states, embedding_table = self.backbone(tokens, input_position, attention_mask,
                                                            init_reset, batch_valid_length)
+            logits_2d = self.lm_head(output_states, embedding_table)
         elif self.model_type == 'baichuan':
             tokens = input_ids
             output_states = self.backbone(tokens, input_position, init_reset, batch_valid_length)
+            logits_2d = self.lm_head(output_states)
         elif self.model_type == 'gpt2':
             tokens = input_ids
             if attention_mask is None:
@@ -275,6 +247,14 @@ class CausalLMHydraWithValueHead(nn.Cell):
             output_states, embedding_table = self.backbone(
                 tokens, attention_mask, input_position=input_position,
                 init_reset=init_reset, batch_valid_length=batch_valid_length)
+            logits_2d = self.lm_head(output_states, embedding_table)
+        elif self.model_type == 'llama':
+            if self.model.phase == "train":
+                tokens = self.model.slice(input_ids, (0, 0), (batch_size, seq_length - 1), (1, 1))
+            else:
+                tokens = input_ids
+            output_states = self.backbone(tokens, input_position, init_reset, batch_valid_length)
+            logits_2d = self.lm_head(output_states)
         else:
             if self.model.phase == "train":
                 tokens = self.model.stridedslice(input_ids, (0, 0), (batch_size, seq_length - 1), (1, 1))
@@ -287,11 +267,12 @@ class CausalLMHydraWithValueHead(nn.Cell):
                 input_mask = self.model.not_equal(tokens, self.model.eos_token_id).astype(mstype.float32)
 
             output_states, embedding_table = self.backbone(tokens, input_mask, init_reset, batch_valid_length)
-
-        if self.model_type == 'baichuan':
-            logits_2d = self.lm_head(output_states)
-        else:
             logits_2d = self.lm_head(output_states, embedding_table)
+
+        # if self.model_type == 'baichuan' or self.model_type == 'llama':
+        #     logits_2d = self.lm_head(output_states)
+        # else:
+        #     logits_2d = self.lm_head(output_states, embedding_table)
 
         logits = self.reshape(logits_2d, (batch_size, seq_length, -1))
 

@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""ppo train."""
+"""train."""
 
 import argparse
 from mindspore import context
@@ -28,12 +28,8 @@ def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         '--align_type',
-        default="rlhf_stages",
+        default="rlhf",
         help='the name for align algorithm. Currently, It supports rlhf, rlhf_stages, dpo, dpo_stages')
-    parser.add_argument(
-        '--model',
-        default="pangu",
-        help='model name or path for align model. Currently, It supports pangu, gpt, bloom, llama')
     parser.add_argument(
         '--device_target',
         default='Ascend',
@@ -60,19 +56,19 @@ def get_args():
         help='max_device_memory (str): Set the maximum memory available for devices. The format is xxGB.')
     parser.add_argument(
         '--dataset_dir',
-        default='',
+        default='/path/train.mindrecord',
         help='dataset_dir (str): dataset dir.')
     parser.add_argument(
         '--sft_model_path',
-        default='/path/run_pangualpha_2_6b.yaml',
+        default='/path/sft_model.yaml',
         help='sft_model_path (str): sft model yaml path.')
     parser.add_argument(
         '--critic_model_path',
-        default='/path/run_pangualpha_2_6b.yaml',
+        default='/path/critic_model.yaml',
         help='critic_model_path (str): critic model yaml path.')
     parser.add_argument(
         '--reward_model_path',
-        default='/path/run_pangualpha_2_6b.yaml',
+        default='/path/reward_model.yaml',
         help='reward_model_path (str): reward model yaml path.')
     parser.add_argument(
         '--save_data_file',
@@ -89,16 +85,13 @@ def run_rlhf(args):
                         memory_optimize_level='O1', max_device_memory=args.max_device_memory)
 
     ppo_config, sft_model_config, ref_model_config, critic_model_config, rm_model_config = init_configs(args)
-    set_pipeline_parallel_context(parallel_mode=ppo_config.parallel_mode, full_batch=ppo_config.full_batch,
-                                  optimizer_shard=True, stage_num=sft_model_config.parallel_config.pipeline_stage,
-                                  enable_alltoall=ppo_config.enable_alltoall)
+    rank_id, _ = set_pipeline_parallel_context(ppo_config)
     trainer = PPOTrainer(ppo_config=ppo_config, sft_model_config=sft_model_config, ref_model_config=ref_model_config,
                          critic_model_config=critic_model_config, rm_model_config=rm_model_config)
     ppo_with_grad = init_network_and_optimizer(trainer)
     rank_id = D.get_rank()
     for epoch in range(ppo_config.epochs):
         dataset = init_ppo_dataset(trainer)
-        # use data sink to accelerate
         trainer.train(ppo_with_grad, dataset, epoch)
         trainer.save_checkpoint(rank_id, epoch)
 

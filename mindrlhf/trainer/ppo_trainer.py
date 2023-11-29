@@ -1,4 +1,5 @@
 import time
+import os
 from dataclasses import dataclass, asdict
 import numpy as np
 
@@ -324,7 +325,7 @@ class PPOTrainer:
                 all_values[sample_idx][int(valid_length_response[sample_idx]):] = 0.0
                 all_values = np.array(all_values).reshape((n_samples, -1))
                 rewards[int(valid_length_response[sample_idx]):] = 0.0
-                index = valid_length_response[sample_idx] if valid_length_response[sample_idx] < len(rewards) else -1
+                index = valid_length_response[sample_idx] if valid_length_response[sample_idx] < len(rewards) else 0
                 if isinstance(scores, mindspore.Tensor):
                     scores = scores.asnumpy()
                 rewards[int(index)-1] += scores[sample_idx]

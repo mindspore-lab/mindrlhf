@@ -31,10 +31,6 @@ def get_args():
         default="rlhf",
         help='the name for align algorithm. Currently, It supports rlhf, rlhf_stages, dpo, dpo_stages')
     parser.add_argument(
-        '--model',
-        default="pangu",
-        help='model name or path for align model. Currently, It supports pangu, gpt, bloom, llama')
-    parser.add_argument(
         '--device_target',
         default='Ascend',
         help='device_target (str): Ascend.')
@@ -60,19 +56,19 @@ def get_args():
         help='max_device_memory (str): Set the maximum memory available for devices. The format is xxGB.')
     parser.add_argument(
         '--dataset_dir',
-        default='',
+        default='/path/train.mindrecord',
         help='dataset_dir (str): dataset dir.')
     parser.add_argument(
         '--sft_model_path',
-        default='/path/run_pangualpha_2_6b.yaml',
+        default='/path/sft_model.yaml',
         help='sft_model_path (str): sft model yaml path.')
     parser.add_argument(
         '--critic_model_path',
-        default='/path/run_pangualpha_2_6b.yaml',
+        default='/path/critic_model.yaml',
         help='critic_model_path (str): critic model yaml path.')
     parser.add_argument(
         '--reward_model_path',
-        default='/path/run_pangualpha_2_6b.yaml',
+        default='/path/reward_model.yaml',
         help='reward_model_path (str): reward model yaml path.')
     parser.add_argument(
         '--save_data_file',
@@ -94,10 +90,8 @@ def run_rlhf(args):
                          critic_model_config=critic_model_config, rm_model_config=rm_model_config)
     ppo_with_grad = init_network_and_optimizer(trainer)
     for epoch in range(ppo_config.epochs):
-        # sampling
         trainer.make_experience(num_rollouts=ppo_config.num_rollouts)
         dataset = init_ppo_dataset(trainer)
-        # use data sink to accelerate
         trainer.train(ppo_with_grad, dataset, epoch)
         trainer.save_checkpoint(rank_id, epoch)
 
