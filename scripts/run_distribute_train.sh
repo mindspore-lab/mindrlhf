@@ -32,10 +32,10 @@ LOCAL_DEVICE_NUM=${4}
 
 for((i=0;i<${LOCAL_DEVICE_NUM};i++));
 do
-    rm ${ROOT_PATH}/device$i/ -rf
-    mkdir ${ROOT_PATH}/device$i
-    cd ${ROOT_PATH}/device$i || exit
+    rm ${ROOT_PATH}/device$[i+RANK_START]/ -rf
+    mkdir ${ROOT_PATH}/device$[i+RANK_START]
+    cd ${ROOT_PATH}/device$[i+RANK_START] || exit
     export RANK_ID=$[i+RANK_START]
     export DEVICE_ID=$i
-    python3 ${ROOT_PATH}/train.py > log$i.log 2>&1 &
+    python3 ${ROOT_PATH}/train.py > log$[i+RANK_START].log 2>&1 &
 done

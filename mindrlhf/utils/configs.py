@@ -147,10 +147,10 @@ def init_ppo_dataset(trainer):
                     "pretrain_ids", "loss_mask", "attention_mask"]
     if ppo_config.save_data_file and 'stages' in ppo_config.align_type:
         dataset = MindDataset(dataset_files=ppo_config.save_data_file, shuffle=False)
+        dataset = dataset.project(columns=column_names)
     else:
         pipeline = IteratorStore(trainer.store)
         dataset = GeneratorDataset(pipeline, column_names=column_names)
-    dataset = dataset.project(columns=column_names)
     type_cast_op_int32 = TypeCast(mindspore.int32)
     type_cast_op_fp16 = TypeCast(mindspore.float16)
     dataset = dataset.map(operations=type_cast_op_int32, input_columns="query_tensors")
