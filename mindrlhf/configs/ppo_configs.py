@@ -56,7 +56,6 @@ class PPOConfig:
     decay_steps: int = 200000
     opt_offload: bool = False
     mind_dataset_dir: str = "/path/train.mindrecord"
-    use_past: bool = False
     inference_micro_size: int = 1
     save_ckpt_dir: str = ""
     save_data_file: str = ""
