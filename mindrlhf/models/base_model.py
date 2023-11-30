@@ -9,7 +9,7 @@ from mindrlhf.models.baichuan2.baichuan2_7b import Baichuan7BV2ForCausalLM
 
 class BaseModel(nn.Cell):
     '''BaseModel'''
-    _model_list = ['pangu', 'bloom', 'baichuan', 'gpt', 'llama']
+    _model_list = ['pangu', 'bloom', 'baichuan', 'gpt2', 'llama']
 
     def __init__(self):
         super(BaseModel, self).__init__()
