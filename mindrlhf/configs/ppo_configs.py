@@ -8,6 +8,7 @@ class PPOConfig:
     PPO config class which defines the model size
     """
     model_name: str = ''
+    align_type: str = ''
     epochs: int = 2
     total_steps: int = 100000
     batch_size: int = 1

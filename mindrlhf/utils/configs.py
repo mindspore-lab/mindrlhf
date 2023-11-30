@@ -56,6 +56,7 @@ def init_configs(args=None):
         ppo_config.reward_model_path = args.reward_model_path
         ppo_config.critic_model_path = args.critic_model_path
         ppo_config.save_data_file = args.save_data_file
+        ppo_config.align_type = args.align_type
     sft_model_path = ppo_config.sft_model_path
     critic_model_path = ppo_config.critic_model_path
     reward_model_path = ppo_config.reward_model_path
