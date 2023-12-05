@@ -142,7 +142,7 @@ model:
     layernorm_compute_type: "float32"
     softmax_compute_type: "float32"
     compute_dtype: "float16"
-    checkpoint_name_or_path: "gpt2"
+    checkpoint_name_or_path: ""
     eos_token_id: 50256
     repetition_penalty: 1
     max_decode_length: 512
