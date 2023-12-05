@@ -58,9 +58,9 @@ def write_mindrecord(args):
     raw_data = load_json_file(args.file_path)
 
     tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_name_or_path)
-    max_prompt_length = args.max_prompt_length
-    seq_length = args.seq_length
-    pad_token_id = args.pad_token_id
+    max_prompt_length = int(args.max_prompt_length)
+    seq_length = int(args.seq_length)
+    pad_token_id = int(args.pad_token_id)
 
     schema = {
         "prompt_ids": {"type": "int32", "shape": [-1]},

@@ -67,6 +67,7 @@ def init_configs(args=None):
     sft_model_config.parallel_config = copy.deepcopy(config.parallel_config)
     sft_model_config.parallel = copy.deepcopy(config.parallel)
     sft_model_config.model_name = config.trainer.model_name
+    ppo_config.use_past = config.use_past
 
     ref_model_config = AutoConfig.from_pretrained(sft_model_path)
     ref_model_config.parallel_config = copy.deepcopy(config.parallel_config)
