@@ -137,13 +137,13 @@ class PPOTrainer:
     def push_to_store(self, data):
         self.store = data
 
-    def save_checkpoint(self, rank_id, steps):
-        save_dir = self.ppo_config.save_ckpt_dir
+    def save_checkpoint(self, rank_id=0, steps=0):
+        save_dir = self.ppo_config.save_ckpt_dir + "/rank_{}".format(rank_id)
         if save_dir:
             print("Save checkpoints in {}".format(save_dir))
             if not os.path.exists(save_dir):
                 os.makedirs(save_dir)
-            filename = os.path.join(save_dir + "/rank_{}".format(rank_id), "policy_model_epoch_{}.ckpt".format(steps))
+            filename = os.path.join(save_dir, "policy_model_epoch_{}.ckpt".format(steps))
             mindspore.save_checkpoint(self.ppo_model.policy_model, filename, integrated_save=False)
         else:
             print("There is no checkpoint to save!")
