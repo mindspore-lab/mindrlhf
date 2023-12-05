@@ -144,7 +144,7 @@ class PPOTrainer:
             if not os.path.exists(save_dir):
                 os.makedirs(save_dir)
             filename = os.path.join(save_dir + "/rank_{}".format(rank_id), "policy_model_epoch_{}.ckpt".format(steps))
-            mindspore.save_checkpoint(trainer.ppo_model.policy_model, filename, integrated_save=False)
+            mindspore.save_checkpoint(self.ppo_model.policy_model, filename, integrated_save=False)
         else:
             print("There is no checkpoint to save!")
 
