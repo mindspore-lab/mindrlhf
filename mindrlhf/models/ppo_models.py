@@ -151,6 +151,7 @@ class CausalLMHydraWithValueHead(BaseModel):
         self.argmax = P.Argmax(-1).shard(((dp, mp),))
         self.expand_dims = P.ExpandDims().shard(((dp, 1, 1),))
         self.sub_shard = P.Sub().shard(((), (1, 1, 1)))
+        self.add_shard = P.Add().shard(((1, 1, 1), ()))
 
         self.minus_one = Tensor([-1], mstype.int32)
         self.v_head0 = Linear(self.ppo_config.hidden_size, 2*self.ppo_config.hidden_size,
@@ -292,6 +293,7 @@ class CausalLMHydraWithValueHead(BaseModel):
 
         # used in pretrain loss
         else:
+            logits = self.add_shard(logits, 0)
             return logits
 
 

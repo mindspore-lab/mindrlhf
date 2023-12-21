@@ -1,6 +1,7 @@
 from mindspore import nn
 import mindspore.ops as ops
 import mindspore.common.dtype as mstype
+from mindspore.common.initializer import TruncatedNormal
 from mindformers.modules.layers import Linear
 from mindspore.ops import operations as P
 from mindspore.ops import functional as F
@@ -124,7 +125,8 @@ class CriticModel(BaseModel):
         self.select_critic_model(config)
         self.v_head0 = Linear(in_channels=config.hidden_size,
                               out_channels=1,
-                              has_bias=False).to_float(mstype.float16)
+                              has_bias=True,
+                              weight_init=TruncatedNormal()).to_float(mstype.float16)
         dp = config.parallel_config.data_parallel
         mp = config.parallel_config.model_parallel
         self.v_head0.shard(strategy_matmul=((dp, mp), (1, mp)))
@@ -132,6 +134,7 @@ class CriticModel(BaseModel):
         self.v_head0.pipeline_stage = config.parallel_config.pipeline_stage - 1
         self.expand_dims = P.ExpandDims().shard(((dp, 1, 1),))
         self.sub_shard = P.Sub().shard(((), (1, 1, 1)))
+        self.sigmoid = nn.Sigmoid()
 
     def construct(self, input_ids, attention_mask=None, input_position=None):
         batch_size, seq_length = F.shape(input_ids)
@@ -194,4 +197,5 @@ class CriticModel(BaseModel):
 
         values = self.v_head0(output_states)
         values = self.reshape(values, (batch_size, seq_length))
+        values = self.sigmoid(values)
         return values
