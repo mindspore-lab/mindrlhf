@@ -30,16 +30,18 @@ response有3种类型，分别为拒绝&正向建议(safe and responsibility) > 
   | ---- | ---- | ---- | ---- | ---- | ---- | ---- | ---- |
   | train | 116536 | 80 | 11.3 | 878 | 145.4 | 969 | 178.3 |
   | test | 29133 | 93 | 11.3 | 1024 | 145.3 | 1024 | 177.6 |
-  
+
 
 本代码仓提供了CValues-Comparison数据集的处理脚本，方便用户一键式将json、parque格式的数据集文件进行编码和预处理，并存储为MindsSpore配套的MindRecord格式文件，执行命令为：
 ```shell
 python cvalues_comparison.py [--configs]
 ```
 脚本提供如下参数：
-  - model_name：编码使用的 tokenizer 名称或 tokenizer 文件对应路径。目前仅支持基于 mindformers 实现的 tokenizer。
+  - model：编码使用的 tokenizer 名称或 tokenizer 文件对应路径。目前仅支持基于 mindformers 实现的 tokenizer。
+  -padding_side：填充方向，默认有填充。
   - src_file：原始数据文件。当前仅支持 jsonl 格式文件。
   - dst_file：输出 mindrecord 文件路径。
+  - seq_length: 输出 mindrecord 文件中每条序列的长度。
 
 注意：执行该转换脚本前需要先安装 mindformers, mindspore
      [mindspore 安装](https://www.mindspore.cn/install)
@@ -55,30 +57,30 @@ python cvalues_comparison.py [--configs]
 |position_id|输入的位置id|
 |loss_mask|指示样本对中差异的位置，用于后续loss计算|
 |end_ind|指示样本对中有效token的最长位置下标|
-   
+
 转换后数据集样例：
 ```
 {
-'chosen_input_ids': array([ 7136, 10967,  3549, ...,     2,     2,     2]), 
-'chosen_attention_mask': array([1, 1, 1, ..., 0, 0, 0]), 
-'rejected_input_ids': array([ 7136, 10967,  3549, ...,     2,     2,     2]), 
-'rejected_attention_mask': array([1, 1, 1, ..., 0, 0, 0]), 
-'position_id': array([   0,    1,    2, ..., 1021, 1022, 1023]), 
-'loss_mask': array([0., 0., 0., ..., 0., 0., 0.]), 
+'chosen_input_ids': array([ 7136, 10967,  3549, ...,     2,     2,     2]),
+'chosen_attention_mask': array([1, 1, 1, ..., 0, 0, 0]),
+'rejected_input_ids': array([ 7136, 10967,  3549, ...,     2,     2,     2]),
+'rejected_attention_mask': array([1, 1, 1, ..., 0, 0, 0]),
+'position_id': array([   0,    1,    2, ..., 1021, 1022, 1023]),
+'loss_mask': array([0., 0., 0., ..., 0., 0., 0.]),
 'end_ind': 119
 }
 ```
 
 #### openai_summarize_comparisons
-[openai_summarize_comparisons](https://huggingface.co/datasets/CarperAI/openai_summarize_comparisons)数据集，示例如下。  
-|prompt (string)|chosen (string)|rejected (string)|  
-|:------:|:------:|:------:|  
-|"SUBREDDIT: r/relationships TITLE: My [21/M] girlfriend [19/F] broke up with me after she went through my Facebook without my permission...the messages in the first place."|"TL;DR: My Girlfriend of 15 months went through my Facebook messages without my permission and found old conversations of me flirting with a girl. She broke up with me and went no contact.|"TL;DR: My girlfriend and I broke up after she went through my Facebook account without my permission.|  
+[openai_summarize_comparisons](https://huggingface.co/datasets/CarperAI/openai_summarize_comparisons)数据集，示例如下。
+|prompt (string)|chosen (string)|rejected (string)|
+|:------:|:------:|:------:|
+|"SUBREDDIT: r/relationships TITLE: My [21/M] girlfriend [19/F] broke up with me after she went through my Facebook without my permission...the messages in the first place."|"TL;DR: My Girlfriend of 15 months went through my Facebook messages without my permission and found old conversations of me flirting with a girl. She broke up with me and went no contact.|"TL;DR: My girlfriend and I broke up after she went through my Facebook account without my permission.|
 本代码仓提供了openai_summarize_comparisons数据集的处理脚本，执行命令为：
 ```shell
 python comparison_dataset.py
 ```
-脚本中数据集的处理逻辑分为以下几步： 
+脚本中数据集的处理逻辑分为以下几步：
 
 - 第一步，将数据集重新组织为每条数据样本由一个文本对组成，由接受的回答和拒绝的回答分别与提示词prompt拼接而成的形式。
     ```python
@@ -123,7 +125,7 @@ python comparison_dataset.py
     - `position_id`
     - `loss_mask`
     - `end_ind`
-    
+
     保存为mindrecord使用的schema如下：
     ```python
     schema = {"chosen_input_ids": {"type": "int32", "shape": [-1]},
@@ -162,13 +164,13 @@ train_dataset_task:
   dataset_config: *train_dataset
 ```
 
-`RewardModelDataset`将对数据集中的数据进行预处理, 返回的数据说明如下：  
+`RewardModelDataset`将对数据集中的数据进行预处理, 返回的数据说明如下：
 
--  `input_ids`: `(batch_size*2, seq_len)`; 包含了`batch_size`个正样本和`batch_size`个负样本 
--  `position_id`: `(batch_size*2, seq_len)` 
--  `attention_mask`: `(batch_size*2, seq_len)` 
--  `loss_mask`: `(batch_size, seq_len)`; 从正样本和负样本第一个不相等的位置到正样本和负样本的最大长度都为1，其他为0 
--  `end_index`： `(batch_size*2, )`; 样本的最大长度 
+-  `input_ids`: `(batch_size*2, seq_len)`; 包含了`batch_size`个正样本和`batch_size`个负样本
+-  `position_id`: `(batch_size*2, seq_len)`
+-  `attention_mask`: `(batch_size*2, seq_len)`
+-  `loss_mask`: `(batch_size, seq_len)`; 从正样本和负样本第一个不相等的位置到正样本和负样本的最大长度都为1，其他为0
+-  `end_index`： `(batch_size*2, )`; 样本的最大长度
 
 
 
@@ -184,16 +186,16 @@ train_dataset_task:
 
 对`GPT2`模型的配置文件做如下改动即可完成基于`GPT2` 模型的`Reward Model`的配置:
 
-- `run_gpt.yaml`中  
+- `run_gpt.yaml`中
 ```yaml
 run_mode: 'train'
 trainer:
   type: CausalLanguageModelingTrainer
-  # model_name: "gpt2" 
+  # model_name: "gpt2"
   model_name: 'gpt2_reward'
 ```
 
-- `task_config/gpt2_dataset.yaml` 参考上文数据集的使用中的描述,主要改动如下  
+- `task_config/gpt2_dataset.yaml` 参考上文数据集的使用中的描述,主要改动如下
 ```yaml
 train_dataset_task:
   # type: CausalLanguageModelDataset
@@ -201,7 +203,7 @@ train_dataset_task:
   dataset_config: *train_dataset
 ```
 
-- `model_config/gpt.yaml` 中  
+- `model_config/gpt.yaml` 中
 ```yaml
 model:
   arch:
@@ -232,7 +234,7 @@ python run_mindformer.py --config ../configs/gpt2/run_reward_gpt2.yaml \
 
 本教程提供两个评估指标(loss 和 accuracy)，定义如下：
 
-- loss: 
+- loss:
 ```python
 @MindFormerRegister.register(MindFormerModuleType.LOSS)
 class CompareLoss(nn.Cell):
@@ -292,7 +294,7 @@ class CompareLoss(nn.Cell):
 
 - accuracy:
 
-`accuracy`可通过如下方式计算，accuracy的含义为`chosen_end_scores` 大于`reject_end_scores`的样例的占比。  
+`accuracy`可通过如下方式计算，accuracy的含义为`chosen_end_scores` 大于`reject_end_scores`的样例的占比。
 ```python
 accuracy = np.sum(chosen_end_scores.asnumpy() > reject_end_scores.asnumpy()) / reject_end_scores.shape[0]
 ```

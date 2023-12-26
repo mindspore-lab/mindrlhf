@@ -32,7 +32,9 @@ from mindformers.tools import logger
 from mindformers.tools.register import MindFormerConfig
 from mindformers.dataset import RewardModelDataset
 from mindformers.dataset import check_dataset_config
-
+import sys
+sys.path.append(os.path.abspath('../../../'))
+from mindrlhf.models.llama.llama_reward import LlamaRewardModel
 
 def run(args):
     """ calculate accuracy on test dataset """
@@ -49,8 +51,10 @@ def run(args):
     model_config = AutoConfig.from_pretrained(args.config)
     model_config.parallel_config = config.parallel_config
 
-    # init model
-    model = BloomRewardModel(model_config)
+    if config.model.arch.type == "BloomRewardModel":
+        model = BloomRewardModel(model_config)
+    elif config.model.arch.type == "LlamaRewardModel":
+        model = LlamaRewardModel(model_config)
     model.set_train(False)
 
     infer_model = Model(model)
@@ -83,7 +87,7 @@ def run(args):
     count = 0
     total_acc = 0
     for data in val_dataset.create_dict_iterator():
-        end_scores = model.infer(data["input_ids"], data["attention_mask"])
+        end_scores = model.infer(input_ids=data["input_ids"], end_ind=data["end_ind"])
         end_scores = end_scores.asnumpy()
         bs = end_scores.shape[0] // 2
         chosen_end_scores = end_scores[:bs]
@@ -91,8 +95,8 @@ def run(args):
         accuracy = np.sum(chosen_end_scores > reject_end_scores) / bs
         count += 1
         total_acc += accuracy
-        print(f"acc: [{accuracy}]; avg acc: [{total_acc / count}]", flush=True)
-    print(f"acc: [{total_acc / count}]", flush=True)
+        logger.info(f"acc: [{accuracy}]; avg acc: [{total_acc / count}]")
+    logger.info(f"acc: [{total_acc / count}]")
 
 
 if __name__ == "__main__":
@@ -103,11 +107,6 @@ if __name__ == "__main__":
         default="configs/bloom/run_bloom_7.1b_reward.yaml",
         required=False,
         help="YAML config file path"
-    )
-    parser.add_argument(
-        "--tokenizer",
-        required=True,
-        help="Name or path of tokenizer."
     )
     parser.add_argument(
         "--distributed_ckpt_path",

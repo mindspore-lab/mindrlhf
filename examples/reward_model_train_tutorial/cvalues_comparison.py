@@ -122,8 +122,6 @@ def write_mindrecord(tokenizer, src_file, dst_file, seq_length=1024):
     np.set_printoptions(threshold=np.inf)
     for item in get_txt(tokenizer, src_file):
         sample = item[0]
-        print(sample)
-        time.sleep(100)
         writer.write_raw_data([sample])
 
         static_dict["count"] = static_dict["count"] + 1
@@ -168,15 +166,24 @@ def get_args():
         default=None,
         required=True,
         help='reward model data file after converting')
+    parser.add_argument(
+        '--seq_length',
+        type=int,
+        default=1024,
+        required=True,
+        help='sequence length of data file after converting')
     args_opt = parser.parse_args()
     return args_opt
 
 
 if __name__ == "__main__":
     args = get_args()
+    print(args.model)
     tokenizer = AutoTokenizer.from_pretrained(args.model)
     tokenizer.padding_side = args.padding_side
     tokenizer.pad_token = tokenizer.eos_token
     src_file = args.src_file
     dst_file = args.dst_file
-    write_mindrecord(tokenizer, src_file, dst_file)
+    seq_length = args.seq_length
+    write_mindrecord(tokenizer, src_file, dst_file, seq_length)
+

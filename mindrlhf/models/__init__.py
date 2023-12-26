@@ -15,6 +15,9 @@
 """MindRLHF models."""
 from .ppo_models import *
 from .reward_model import *
+from .llama import *
+
 __all__ = []
 __all__.extend(ppo_models.__all__)
 __all__.extend(reward_model.__all__)
+__all__.extend(llama.__all__)

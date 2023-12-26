@@ -32,6 +32,9 @@ from mindformers.core.parallel_config import build_parallel_config
 from mindformers.trainer.utils import get_last_checkpoint
 from mindformers.tools import logger
 from mindformers.tools.register import MindFormerConfig
+import sys
+sys.path.append(os.path.abspath('../../../'))
+from mindrlhf.models.llama.llama_reward import LlamaRewardModel
 
 
 def read_json(file_path):
@@ -51,11 +54,8 @@ def read_json(file_path):
 
 def run(args):
     """ Inference for given text sample. """
-    # initialize tokenizer
-    tokenizer = AutoTokenizer.from_pretrained("bloom_560m")
-    # read test data
+    tokenizer = AutoTokenizer.from_pretrained(args.tokenizer)
     input_txt = read_json(args.data_file)
-
     config = MindFormerConfig(args.config)
 
     # init context
@@ -68,8 +68,10 @@ def run(args):
     model_config = AutoConfig.from_pretrained(args.config)
     model_config.parallel_config = config.parallel_config
 
-    # init model
-    model = BloomRewardModel(model_config)
+    if config.model.arch.type == "BloomRewardModel":
+        model = BloomRewardModel(model_config)
+    elif config.model.arch.type == "LlamaRewardModel":
+        model = LlamaRewardModel(model_config)
     model.set_train(False)
 
     infer_model = Model(model)
@@ -79,7 +81,7 @@ def run(args):
         "### 问题：\n{instruction}\n\n### 回答：\n{response}"
     )
 
-    batch_size = model_config.batch_size if model_config.batch_size else 1
+    batch_size = 1
     seq_length = model_config.seq_length
 
     if args.distributed_ckpt_path is not None:
@@ -101,9 +103,9 @@ def run(args):
         not_load_network_params = load_param_into_net(model, checkpoint_dict)
         logger.info("Network parameters are not loaded: %s", str(not_load_network_params))
 
-    for item in enumerate(input_txt):
-        prompt = item["prompt"]
-        response = item["response"]
+    for item in input_txt:
+        prompt = item["prompt"].strip()
+        response = item["response"].strip()
         token_dict = tokenizer(
             prompt_format.format_map({"instruction": prompt, "response": response}),
             truncation=True,
@@ -113,11 +115,12 @@ def run(args):
         )
         input_ids = np.expand_dims(np.array(token_dict["input_ids"]), axis=0)
         attention_mask = np.expand_dims(np.array(token_dict["attention_mask"]), axis=0)
+        end_ind = attention_mask.sum(-1)
         input_ids = Tensor(input_ids, mstype.int32)
-        attention_mask = Tensor(attention_mask, mstype.float16)
-        print(f"Sample:\n{prompt_format.format_map({'instruction': prompt, 'response': response})}", flush=True)
-        end_score = model.infer(input_ids, attention_mask)
-        print(f"reward score: {end_score}", flush=True)
+        end_ind = Tensor(end_ind, mstype.int32)
+        logger.info(f"Sample:\n{prompt_format.format_map({'instruction': prompt, 'response': response})}")
+        end_score = model.infer(input_ids=input_ids, end_ind=end_ind)
+        logger.info(f"reward score: {end_score}")
 
 
 if __name__ == "__main__":
@@ -137,6 +140,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--tokenizer",
         required=True,
+        default="llama2_7b",
         help="Name or path of tokenizer."
     )
     parser.add_argument(
