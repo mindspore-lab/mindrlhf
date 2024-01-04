@@ -246,6 +246,7 @@ class PPOTrainer:
             resposne_array = resposne_array.asnumpy()
             left_padding_prompt = left_padding_prompt.asnumpy()
             self.ppo_model.policy_model.model.add_flags_recursive(use_past=False)
+            self.ppo_model.policy_model.model.add_flags_recursive(is_first_iteration=True)
 
             # samples: prompt + generated response, right padding to seq_length
             samples = Tensor(samples, mstype.int32)
