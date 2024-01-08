@@ -184,11 +184,13 @@ class CriticModel(BaseModel):
                 tokens, attention_mask, input_position=input_position,
                 init_reset=init_reset, batch_valid_length=batch_valid_length)
         elif self.model_type == 'llama':
+            init_reset = None
+            batch_valid_length = None
             if self.model.phase == "train":
                 tokens = self.model.slice(input_ids, (0, 0), (batch_size, seq_length - 1), (1, 1))
             else:
                 tokens = input_ids
-            output_states = self.backbone(tokens, input_position, init_reset=None, batch_valid_length=None)
+            output_states = self.backbone(tokens, input_position, init_reset, batch_valid_length)
         else:
             init_reset = True
             batch_valid_length = None

@@ -57,7 +57,7 @@ class PPOConfig:
     opt_offload: bool = False
     mind_dataset_dir: str = "/path/train.mindrecord"
     inference_micro_size: int = 1
-    save_ckpt_dir: str = ""
+    save_ckpt_dir: str = "./"
     save_data_file: str = ""
     sft_model_path: str = "/path/model.yaml"
     critic_model_path: str = "/path/model.yaml"
