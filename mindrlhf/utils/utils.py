@@ -348,3 +348,14 @@ class TimePoint:
     def get_spend_time(self):
         """Get the time spend between end and start"""
         return self.end_time - self.start_time
+
+
+def get_testing_dataset_path(dataset_name):
+    """Get dataset path for testing."""
+    dataset_dict = {
+        "cvalues_1024": "/path/cvalues_1024.mindrecord",
+    }
+    dataset = dataset_dict.get(dataset_name)
+    if dataset is None:
+        raise ValueError(f"Dataset {dataset_name} is not supported.")
+    return dataset
