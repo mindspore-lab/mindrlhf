@@ -35,6 +35,7 @@ from mindformers.tools.register import MindFormerConfig
 import sys
 sys.path.append(os.path.abspath('../../../'))
 from mindrlhf.models.llama.llama_reward import LlamaRewardModel
+from mindrlhf.models.baichuan2 import Baichuan7BReward
 
 
 def read_json(file_path):
@@ -72,6 +73,8 @@ def run(args):
         model = BloomRewardModel(model_config)
     elif config.model.arch.type == "LlamaRewardModel":
         model = LlamaRewardModel(model_config)
+    elif config.model.arch.type == "Baichuan7BReward":
+        model = Baichuan7BReward(model_config)
     model.set_train(False)
 
     infer_model = Model(model)
