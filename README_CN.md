@@ -42,7 +42,7 @@ MindRLHF架构图如下：
 |  依赖   | 版本|
 |  ----   | ----        |
 | MindSpore    | r2.2   |
-| Mindformers | r0.8    |
+| Mindformers | r1.0    |
 
 
 ## 支持列表
