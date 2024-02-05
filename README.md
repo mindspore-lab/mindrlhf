@@ -48,7 +48,7 @@ There are some requirements for MindRLHF:
 |  requirements   | version|
 |  ----   | ----        |
 | MindSpore    | r2.2   |
-| Mindformers | r0.8    |
+| Mindformers | r1.0    |
 
 ## Supported Models
 
