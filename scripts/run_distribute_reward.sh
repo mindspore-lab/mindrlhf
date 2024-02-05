@@ -56,5 +56,3 @@ do
     echo "start training for rank $RANK_ID, device $DEVICE_ID"
     $EXECUTE_ORDER &> ./output/log/rank_$RANK_ID/mindformer.log &
 done
-wait
-shopt -u extglob

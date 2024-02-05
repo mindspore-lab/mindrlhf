@@ -1,9 +1,10 @@
 import numpy as np
 import argparse
 import jsonlines
-
+from tqdm import tqdm
 from mindspore.mindrecord import FileWriter
 from mindformers import AutoTokenizer
+from mindrlhf.models.baichuan2.baichuan2_tokenizer import Baichuan2Tokenizer
 
 
 def load_json_file(file_path):
@@ -17,7 +18,7 @@ def load_json_file(file_path):
 def process_data(tokenizer, raw_data, max_prompt_length, seq_length, pad_token_id):
     template = ("{prompt}{response}")
 
-    for item in raw_data:
+    for item in tqdm(raw_data):
         sample = {}
         prompt = template.format_map({"prompt": item["prompt"], "response": ""})
         response = template.format_map({"prompt": item["prompt"], "response": item["pos_resp"]})

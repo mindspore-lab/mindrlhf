@@ -13,3 +13,6 @@ rlhf_master/
 TLDR_data/
 .DS_Store
 .vscode/
+build/
+device*/
+kernel_meta_*/

@@ -14,6 +14,7 @@
 # ============================================================================
 """llama reward model"""
 
+import copy
 from mindspore import nn
 import mindspore.common.dtype as mstype
 from mindformers.models import BaseModel
@@ -23,7 +24,6 @@ from mindspore import ops as P
 from mindspore.ops import functional as F
 from mindformers.models.llama import LlamaModel, LlamaConfig
 from mindformers.core.loss import CompareLoss
-import copy
 from mindformers.tools.logger import logger
 
 
@@ -33,17 +33,17 @@ class VHead(nn.Cell):
         super().__init__()
         dp = config.parallel_config.data_parallel
         mp = 1
-        self.vhead = Linear(in_channels=config.hidden_size,
+        self.v_head0 = Linear(in_channels=config.hidden_size,
                             out_channels=1,
                             has_bias=False).to_float(mstype.float16)
-        self.vhead.shard(strategy_matmul=((dp, mp), (mp, 1)))
-        self.vhead.pipeline_stage = config.parallel_config.pipeline_stage - 1
+        self.v_head0.shard(strategy_matmul=((dp, mp), (mp, 1)))
+        self.v_head0.pipeline_stage = config.parallel_config.pipeline_stage - 1
 
     def construct(self, output_states):
         """
         construct function for vhead
         """
-        return self.vhead(output_states)
+        return self.v_head0(output_states)
 
 
 @MindFormerRegister.register(MindFormerModuleType.MODELS)
@@ -65,10 +65,10 @@ class LlamaRewardModel(BaseModel):
         parallel_config = config.parallel_config
         self.transformer = LlamaModel(config)
 
-        self.vhead = VHead(config)
+        self.v_head0 = VHead(config)
         if parallel_config.pipeline_stage > 1:
-            self.vhead.pipeline_stage = parallel_config.pipeline_stage - 1
-            self.transformer.embedding.word_embedding.embedding_table.add_pipeline_stage(self.vhead.pipeline_stage)
+            self.v_head0.pipeline_stage = parallel_config.pipeline_stage - 1
+            self.transformer.embedding.word_embedding.embedding_table.add_pipeline_stage(self.v_head0.pipeline_stage)
 
         vocab_size = config.vocab_size
         loss_parallel_config = copy.deepcopy(parallel_config)
@@ -96,7 +96,7 @@ class LlamaRewardModel(BaseModel):
         output_states = self.transformer(input_ids)
 
         # [bs, seq, hidden_size]
-        logits = self.vhead(output_states)
+        logits = self.v_head0(output_states)
         # [bs, seq, 1]
         logits = logits.squeeze(-1)
          # [bs, seq]
@@ -110,7 +110,7 @@ class LlamaRewardModel(BaseModel):
         batch_size, seq_length = F.shape(input_ids)
         batch_size = batch_size // 2
         output_states = self.transformer(input_ids)
-        logits = self.vhead(output_states)
+        logits = self.v_head0(output_states)
         logits = logits.squeeze(-1)
         rewards = F.reshape(logits, (-1, seq_length))
         chosen_rewards = self.slice(rewards, (0, 0), (batch_size, seq_length), (1, 1))
@@ -130,7 +130,7 @@ class LlamaRewardModel(BaseModel):
               end_ind):
         batch_size, seq_length = F.shape(input_ids)
         output_states = self.transformer(input_ids)
-        logits = self.vhead(output_states)
+        logits = self.v_head0(output_states)
         logits = logits.squeeze(-1)
         rewards = F.reshape(logits, (-1, seq_length))
         end_ind = end_ind.reshape((-1, 1))

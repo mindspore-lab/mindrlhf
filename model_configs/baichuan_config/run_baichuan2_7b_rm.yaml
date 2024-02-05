@@ -1,6 +1,7 @@
 seed: 0
-output_dir: './output'  # 当前不支持自定义修改，请勿修改该默认值
+output_dir: './output' # path to save checkpoint/strategy
 load_checkpoint: ''
+src_strategy_path_or_dir: ''
 auto_trans_ckpt: False  # If true, auto transform load_checkpoint to load in distributed model
 only_save_strategy: False
 resume_training: False
@@ -14,7 +15,7 @@ trainer:
 
 # runner config
 runner_config:
-  epochs: 4
+  epochs: 1
   batch_size: 2
   sink_mode: True
   sink_size: 2
@@ -41,16 +42,19 @@ train_dataset: &train_dataset
     type: MindDataset
     dataset_dir: ""
     shuffle: True
-  input_columns: ["input_ids"]  # "input_ids", "labels" , labels are used in instruction finetune.
+  input_columns: ["chosen_input_ids", "chosen_attention_mask",
+                  "rejected_input_ids", "rejected_attention_mask",
+                  "position_id", "loss_mask", "end_ind"]
+  output_columns: ["input_ids", "position_id", "attention_mask", "loss_mask", "end_ind"]
   num_parallel_workers: 8
   python_multiprocessing: False
   drop_remainder: True
-  batch_size: 4
   repeat: 1
   numa_enable: False
   prefetch_size: 1
+  pad_token_id: 0
 train_dataset_task:
-  type: CausalLanguageModelDataset
+  type: RewardModelDataset
   dataset_config: *train_dataset
 # if True, do evaluate during the training process. if false, do nothing.
 # note that the task trainer should support _evaluate_in_training function.
@@ -64,31 +68,49 @@ eval_dataset: &eval_dataset
     type: MindDataset
     dataset_dir: ""
     shuffle: False
-  input_columns: ["input_ids"]
+  input_columns: ["chosen_input_ids", "chosen_attention_mask",
+                  "rejected_input_ids", "rejected_attention_mask",
+                  "position_id", "loss_mask", "end_ind"]
+  output_columns: ["input_ids", "position_id", "attention_mask", "loss_mask", "end_ind"]
   num_parallel_workers: 8
   python_multiprocessing: False
   drop_remainder: False
   repeat: 1
   numa_enable: False
   prefetch_size: 1
+  pad_token_id: 0
 eval_dataset_task:
-  type: CausalLanguageModelDataset
+  type: RewardModelDataset
   dataset_config: *eval_dataset
 
-# default parallel of device num = 16 910A
+
+# parallel context config
+parallel:
+  parallel_mode: 1 # 0-data parallel, 1-semi-auto parallel, 2-auto parallel, 3-hybrid parallel
+  gradients_mean: False
+  enable_alltoall: False
+  full_batch: True
+  search_mode: "sharding_propagation"
+  enable_parallel_optimizer: True
+  strategy_ckpt_save_file: "./ckpt_strategy.ckpt"
+  parallel_optimizer_config:
+    gradient_accumulation_shard: False
+    parallel_optimizer_threshold: 64
+# default parallel of device num = 16 for Atlas 800
 parallel_config:
-  data_parallel: 8
-  model_parallel: 1
+  data_parallel: 1
+  model_parallel: 8
   pipeline_stage: 1
-  micro_batch_num: 8
-  vocab_emb_dp: True
+  micro_batch_num: 1
+  vocab_emb_dp: False
   gradient_aggregation_group: 4
 # when model parallel is greater than 1, we can set micro_batch_interleave_num=2, that may accelerate the train process.
 micro_batch_interleave_num: 1
 
 # recompute config
 recompute_config:
-  recompute: True
+  recompute: False
+  select_recompute: False
   parallel_optimizer_comm_recompute: False
   mp_comm_recompute: True
   recompute_slice_activation: True
@@ -98,7 +120,8 @@ callbacks:
   - type: MFLossMonitor
   - type: CheckpointMointor
     prefix: "baichuan2"
-    save_checkpoint_steps: 200
+    save_checkpoint_steps: 1000
+    keep_checkpoint_max: 5
     integrated_save: False
     async_save: False
   - type: ObsMonitor
@@ -115,25 +138,14 @@ context:
   save_graphs_path: "./graph"
   device_id: 0
 
-# parallel context config
-parallel:
-  parallel_mode: 1 # 0-data parallel, 1-semi-auto parallel, 2-auto parallel, 3-hybrid parallel
-  gradients_mean: False
-  enable_alltoall: False
-  full_batch: True
-  search_mode: "sharding_propagation"
-  enable_parallel_optimizer: True
-  strategy_ckpt_save_file: "./ckpt_strategy.ckpt"
-  parallel_optimizer_config:
-    gradient_accumulation_shard: False
-    parallel_optimizer_threshold: 64
+
 
 # model config
 model:
   model_config:
     type: LlamaConfig
     batch_size: 1 # add for increase predict
-    seq_length: 512
+    seq_length: 1024
     hidden_size: 4096
     num_layers: 32
     num_heads: 32
@@ -155,15 +167,17 @@ model:
     compute_in_2d: True
     use_flash_attention: False
     offset: 0
-    checkpoint_name_or_path: "path/to/baichuan2-7B-Chat.ckpt"
+    checkpoint_path: "/path/Baichuan2_7B_Base.ckpt"
+    checkpoint_name_or_path: ""
     repetition_penalty: 1.05
+    temperature: 1.0
     max_decode_length: 512
     top_k: 5
     top_p: 0.85
     do_sample: True
     max_new_tokens: 64
   arch:
-    type: Baichuan7BV2ForCausalLM
+    type: Baichuan7BReward
 
 processor:
   return_tensors: ms

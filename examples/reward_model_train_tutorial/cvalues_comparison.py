@@ -4,27 +4,28 @@ import numpy as np
 import jsonlines
 from tqdm import tqdm
 from mindformers import AutoTokenizer
+from mindrlhf.models.baichuan2.baichuan2_tokenizer import Baichuan2Tokenizer
 from mindspore.mindrecord import FileWriter
 import argparse
 skip_count = 0
 
 
-def get_txt(tokenizer, file_path, seq_length=1024, static=True):
+def get_txt(tokenizer, file_path, seq_length=1024, static=True, pad_token_id=0):
 
     prompt_format = (
         "根据以下问题，写一个合适的回答。\n\n"
         "### 问题：\n{instruction}\n\n### 回答：\n{response}"
     )
 
-    PAD_ID = 2
+    PAD_ID = pad_token_id
 
     with open(file_path, 'r', encoding='utf-8') as file:
-        for item in tqdm(jsonlines.Reader(file)):
+        for item in jsonlines.Reader(file):
             sample = {}
             prompt = item["prompt"].strip()
             chosen = item["pos_resp"].strip()
             reject = item["neg_resp"].strip()
-
+            tokenizer.pad_token_id = PAD_ID
             prompt_len = np.array(tokenizer(
                 prompt,
                 truncation=True,
@@ -95,10 +96,11 @@ def get_txt(tokenizer, file_path, seq_length=1024, static=True):
             loss_mask[divergence_idx:end_ind] = 1
             sample["loss_mask"] = loss_mask
             sample["end_ind"] = end_ind
+            # print("prompt_len, chosen_len, reject_len", prompt_len, chosen_len, reject_len)
             yield sample, prompt_len, chosen_len, reject_len
 
 
-def write_mindrecord(tokenizer, src_file, dst_file, seq_length=1024):
+def write_mindrecord(tokenizer, src_file, dst_file, seq_length=1024, pad_token_id=0):
 
     schema = {"chosen_input_ids": {"type": "int32", "shape": [-1]},
               "chosen_attention_mask": {"type": "int32", "shape": [-1]},
@@ -120,10 +122,9 @@ def write_mindrecord(tokenizer, src_file, dst_file, seq_length=1024):
     chosen_total_len = 0
     reject_total_len = 0
     np.set_printoptions(threshold=np.inf)
-    for item in get_txt(tokenizer, src_file):
+    for item in tqdm(get_txt(tokenizer, src_file, pad_token_id=pad_token_id)):
         sample = item[0]
         writer.write_raw_data([sample])
-
         static_dict["count"] = static_dict["count"] + 1
         static_dict["prompt_max"] = item[1] if item[1] > static_dict["prompt_max"] else static_dict["prompt_max"]
         static_dict["prompt_min"] = item[1] if item[1] < static_dict["prompt_min"] else static_dict["prompt_min"]
@@ -172,6 +173,12 @@ def get_args():
         default=1024,
         required=True,
         help='sequence length of data file after converting')
+    parser.add_argument(
+        '--pad_token_id',
+        type=int,
+        default=0,
+        required=True,
+        help='pad_token_id')
     args_opt = parser.parse_args()
     return args_opt
 
@@ -185,5 +192,6 @@ if __name__ == "__main__":
     src_file = args.src_file
     dst_file = args.dst_file
     seq_length = args.seq_length
-    write_mindrecord(tokenizer, src_file, dst_file, seq_length)
+    pad_token_id = int(args.pad_token_id)
+    write_mindrecord(tokenizer, src_file, dst_file, seq_length, pad_token_id)
 
