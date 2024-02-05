@@ -17,6 +17,8 @@
 import argparse
 import os
 import sys
+import mindspore
+from mindspore import context
 from mindformers.core.context import build_context, build_profile_cb, init_context
 from mindformers.trainer import Trainer
 from mindformers.trainer.config_args import ContextConfig, ParallelContextConfig
@@ -25,6 +27,7 @@ from mindformers.tools.utils import str2bool
 from mindformers.mindformer_book import MindFormerBook
 sys.path.append(os.path.abspath('../../../'))
 from mindrlhf.models.llama.llama_reward import LlamaRewardModel
+from mindrlhf.models.baichuan2 import Baichuan7BReward
 
 def run(config='run_llama_2_7b_rm.yaml',
         train_dataset='',
@@ -40,12 +43,14 @@ def run(config='run_llama_2_7b_rm.yaml',
         MindFormerBook._TRAINER_SUPPORT_TASKS_LIST[task][model_name] = real_config_path
         config.use_parallel = use_parallel
         build_context(config)
-
+        print("config", config)
+        context.set_context(jit_syntax_level=mindspore.STRICT)
+        print("********************config.model_config", config.model.model_config)
     if run_mode == 'train':
         task = Trainer(args=config,
                        task=task,
                        train_dataset=train_dataset)
-        task.train(train_checkpoint=False, resume=resume)
+        task.train(train_checkpoint=False)
 
 
 if __name__ == "__main__":
@@ -60,13 +65,10 @@ if __name__ == "__main__":
                         help='set task type.')
     parser.add_argument('--use_parallel', default=True, type=str2bool,
                         help='open parallel for model.')
-    parser.add_argument('--resume', default=False, type=str2bool,
-                        help='whether resume training.')
     args = parser.parse_args()
-
+    print(args)
     run(config=args.config,
         train_dataset=args.train_dataset,
         run_mode=args.run_mode,
         task=args.task,
-        use_parallel=args.use_parallel,
-        resume=args.resume)
+        use_parallel=args.use_parallel)

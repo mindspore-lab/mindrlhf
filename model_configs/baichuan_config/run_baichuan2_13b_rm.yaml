@@ -1,57 +1,55 @@
 seed: 0
-output_dir: './output' # path to save checkpoint/strategy
-load_checkpoint: ''
-src_strategy_path_or_dir: ''
+output_dir: './output'  # 当前不支持自定义修改，请勿修改该默认值
+load_checkpoint: '' # /home/xiaohuawen/RLHF/mindrlhf/ward_model_train_tutorial/output_12.20/checkpoint
 auto_trans_ckpt: False  # If true, auto transform load_checkpoint to load in distributed model
+src_strategy_path_or_dir: ''
 only_save_strategy: False
 resume_training: False
 use_parallel: True
 run_mode: 'train'
+checkpoint_name_or_path: '/data1/test'
 
-# trainer config
 trainer:
   type: CausalLanguageModelingTrainer
-  model_name: 'baichuan2_7b'
+  model_name: 'baichuan2_13b'
+# if True, do evaluate during the training process. if false, do nothing.
+# note that the task trainer should support _evaluate_in_training function.
+do_eval: False
 
-# runner config
 runner_config:
   epochs: 1
   batch_size: 2
   sink_mode: True
   sink_size: 2
 
-# optimizer
 optimizer:
   type: FP32StateAdamWeightDecay
   beta1: 0.9
-  beta2: 0.98
-  eps: 1.e-8 # 1e-8
-  weight_decay: 1.e-4
-
-# lr sechdule
-lr_schedule:
-  type: CosineWithWarmUpLR
+  beta2: 0.95
+  eps: 1.e-8
   learning_rate: 2.e-5
-  lr_end: 2.e-6
-  warmup_ratio: 0.0
-  total_steps: -1 # -1 means it will load the total steps of the dataset
+  weight_decay: 0.0
 
 # dataset
 train_dataset: &train_dataset
   data_loader:
     type: MindDataset
-    dataset_dir: ""
+    dataset_dir: "/data2/jiaoy/dataset/baichuan/baichuan_16m.mindrecord"
     shuffle: True
-  input_columns: ["input_ids", "labels"]  # "input_ids", "labels" , labels are used in instruction finetune.
+  input_columns: ["chosen_input_ids", "chosen_attention_mask",
+                  "rejected_input_ids", "rejected_attention_mask",
+                  "position_id", "loss_mask", "end_ind"]
+  output_columns: ["input_ids", "position_id", "attention_mask", "loss_mask", "end_ind"]
   num_parallel_workers: 8
   python_multiprocessing: False
   drop_remainder: True
-  batch_size: 1
+  batch_size: 2 
   repeat: 1
   numa_enable: False
   prefetch_size: 1
+  pad_token_id: 0
 train_dataset_task:
-  type: CausalLanguageModelDataset
+  type: RewardModelDataset
   dataset_config: *train_dataset
 # if True, do evaluate during the training process. if false, do nothing.
 # note that the task trainer should support _evaluate_in_training function.
@@ -59,68 +57,29 @@ do_eval: False
 eval_step_interval: -1        # num of step intervals between each eval, -1 means no step end eval.
 eval_epoch_interval: 50        # num of epoch intervals between each eval, 1 means eval on every epoch end.
 
-# eval dataset
 eval_dataset: &eval_dataset
   data_loader:
     type: MindDataset
-    dataset_dir: ""
+    dataset_dir: "/data2/jiaoy/dataset/baichuan/baichuan_16m.mindrecord"
     shuffle: False
-  input_columns: ["input_ids", "labels"]
+  input_columns: ["chosen_input_ids", "chosen_attention_mask",
+                  "rejected_input_ids", "rejected_attention_mask",
+                  "position_id", "loss_mask", "end_ind"]
+  output_columns: ["input_ids", "position_id", "attention_mask", "loss_mask", "end_ind"]
   num_parallel_workers: 8
   python_multiprocessing: False
   drop_remainder: False
+  batch_size: 2 
   repeat: 1
   numa_enable: False
   prefetch_size: 1
+  pad_token_id: 0
 eval_dataset_task:
-  type: CausalLanguageModelDataset
+  type: RewardModelDataset
   dataset_config: *eval_dataset
 
-# default parallel of device num = 16 for Atlas 800
-parallel_config:
-  data_parallel: 1
-  model_parallel: 8
-  pipeline_stage: 1
-  micro_batch_num: 1
-  vocab_emb_dp: False
-  gradient_aggregation_group: 4
-# when model parallel is greater than 1, we can set micro_batch_interleave_num=2, that may accelerate the train process.
-micro_batch_interleave_num: 1
-
-# recompute config
-recompute_config:
-  recompute: True
-  select_recompute: False
-  parallel_optimizer_comm_recompute: False
-  mp_comm_recompute: True
-  recompute_slice_activation: True
-
-# callbacks
-callbacks:
-  - type: MFLossMonitor
-  - type: CheckpointMointor
-    prefix: "baichuan2"
-    save_checkpoint_steps: 1000
-    keep_checkpoint_max: 5
-    integrated_save: False
-    async_save: False
-  - type: ObsMonitor
-
-# mindspore context init config
-context:
-  mode: 0 #0--Graph Mode; 1--Pynative Mode
-  device_target: "Ascend"
-  enable_graph_kernel: False
-  graph_kernel_flags: "--disable_expand_ops=Softmax,Dropout --enable_parallel_fusion=true --reduce_fuse_depth=8 --enable_auto_tensor_inplace=true"
-  max_call_depth: 10000
-  max_device_memory: "59GB"
-  save_graphs: False
-  save_graphs_path: "./graph"
-  device_id: 0
-
-# parallel context config
 parallel:
-  parallel_mode: 1 # 0-data parallel, 1-semi-auto parallel, 2-auto parallel, 3-hybrid parallel
+  parallel_mode: 1 # 0-dataset, 1-semi, 2-auto, 3-hybrid
   gradients_mean: False
   enable_alltoall: False
   full_batch: True
@@ -130,68 +89,105 @@ parallel:
   parallel_optimizer_config:
     gradient_accumulation_shard: False
     parallel_optimizer_threshold: 64
+# default parallel of device num = 8 910A
+parallel_config:
+  data_parallel: 1
+  model_parallel: 8
+  pipeline_stage: 1
+  optimizer_shard: True
+  micro_batch_num: 1
+  vocab_emb_dp: False
+  gradient_aggregation_group: 4
+# when model parallel is greater than 1, we can set micro_batch_interleave_num=2, that may accelerate the train process.
+micro_batch_interleave_num: 1
 
-# model config
+recompute_config:
+  recompute: True
+  parallel_optimizer_comm_recompute: False
+  mp_comm_recompute: True
+  recompute_slice_activation: True
+
+callbacks:
+  - type: MFLossMonitor
+  - type: CheckpointMointor
+    prefix: "baichuan2_13b"
+    save_checkpoint_steps: 1000
+    keep_checkpoint_max: 5
+    integrated_save: False
+    async_save: False
+  - type: ObsMonitor
+
+# mindspore context init config
+context:
+  mode: 0 # 0--Graph Mode; 1--Pynative Mode
+  device_target: "Ascend"
+  enable_graph_kernel: False
+  graph_kernel_flags: "--disable_expand_ops=Softmax,Dropout --enable_parallel_fusion=true --reduce_fuse_depth=8 --enable_auto_tensor_inplace=true"
+  max_call_depth: 10000
+  max_device_memory: "59GB"
+  save_graphs: False
+  save_graphs_path: "./graph"
+  device_id: 0
+
+
 model:
   model_config:
     type: LlamaConfig
-    batch_size: 1 # add for increase predict
-    seq_length: 1024
-    hidden_size: 4096
-    num_layers: 32
-    num_heads: 32
+    batch_size: 2 # add for increase predict
+    seq_length: 4096
+    checkpoint_path: '/data2/jiaoy/RLHF/Baichuan2-13B-Chat.ckpt'
+    #checkpoint_path: '/data2/Baichuan2/mindformers-dev2/output_baichuan_0110_2/checkpoint/rank_0/baichuan2_13b_rank_0-500_2.ckpt'
+    hidden_size: 5120
+    num_layers: 40
+    num_heads: 40
     vocab_size: 125696
-    multiple_of: 256
+    multiple_of: 128
     rms_norm_eps: 1.0e-6
     bos_token_id: 1
     eos_token_id: 2
     pad_token_id: 0
     ignore_token_id: -100
-    user_token_id: 195
-    assistant_token_id: 196
     compute_dtype: "float16"
     layernorm_compute_type: "float32"
     softmax_compute_type: "float32"
-    rotary_dtype: "float32"
     param_init_type: "float16"
-    use_past: True
+    use_past: False
+    pretrain_seqlen: 2048 # seqlen of the pretrain checkpoint: 2048 for llama and 4096 for llama2
+    extend_method: "None" # support "None", "PI", "NTK"
     compute_in_2d: True
     use_flash_attention: False
     offset: 0
-    checkpoint_name_or_path: ""
-    repetition_penalty: 1.05
-    temperature: 1.0
-    max_decode_length: 512
-    top_k: 5
-    top_p: 0.85
-    do_sample: True
-    max_new_tokens: 512
+    use_past_shard: False
+    checkpoint_name_or_path: ''
+    repetition_penalty: 1
+    max_decode_length: 2048
+    top_k: 3
+    top_p: 1
+    do_sample: False
   arch:
-    type: Baichuan7BV2ForCausalLM
+    type: Baichuan13BV2Reward
 
 processor:
   return_tensors: ms
   tokenizer:
+    vocab_file: "/data2/dataset/baichuan/tokenizer.model"
     unk_token: '<unk>'
     bos_token: '<s>'
     eos_token: '</s>'
     pad_token: '<unk>'
     type: Baichuan2Tokenizer
-    vocab_file: './tokenizer.model'
   type: LlamaProcessor
 
-# metric
 metric:
   type: PerplexityMetric
 
-# wrapper cell config
 runner_wrapper:
   type: MFTrainOneStepCell
   scale_sense:
     type: DynamicLossScaleUpdateCell
-    loss_scale_value: 65536
+    loss_scale_value: 128
     scale_factor: 2
-    scale_window: 1000
+    scale_window: 100
   use_clip_grad: True
 
 eval_callbacks:
@@ -211,5 +207,4 @@ layer_scale: False
 layer_decay: 0.65
 lr_scale_factor: 256
 
-# aicc
 remote_save_url: "Please input obs url on AICC platform."

@@ -1,4 +1,3 @@
-#!/bin/bash
 # Copyright 2023 Huawei Technologies Co., Ltd
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,26 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ============================================================================
-
-echo "---------------- MindRLHF: build start ----------------"
-BASEPATH=$(cd "$(dirname $0)"; pwd)
-
-export BUILD_PATH="${BASEPATH}/build/"
-
-python setup.py bdist_wheel -d ${BASEPATH}/output
-
-if [ ! -d "${BASEPATH}/output" ]; then
-    echo "The directory ${BASEPATH}/output dose not exist."
-    exit 1
-fi
-
-cd ${BASEPATH}/output || exit
-for package in mindrlhf*whl
-do
-    [[ -e "${package}" ]] || break
-    sha256sum ${package} > ${package}.sha256
-done
-pip install mindrlhf*whl -i https://pypi.tuna.tsinghua.edu.cn/simple
-cd ${BASEPATH} || exit
-rm -rf *-info
-echo "---------------- MindRLHF: build and install end   ----------------"
+"""llama."""
+from .baichuan2_7b import *
+from .baichuan2_13b import *
+from .baichuan2_tokenizer import Baichuan2Tokenizer
+from .baichuan2_reward import *
+__all__ = []
+__all__.extend(baichuan2_7b.__all__)
+__all__.extend(baichuan2_13b.__all__)
+__all__.extend(baichuan2_reward.__all__)
+__all__.extend('Baichuan2Tokenizer')

@@ -74,13 +74,16 @@ class RewardModel(BaseModel):
             # [batch_size, seq_length, vocab_size]
             output_states, _ = self.backbone(tokens, input_position, attention_mask,
                                              init_reset, batch_valid_length)
-        elif self.model_type == 'baichuan':
+        elif self.model_type == 'baichuan2_7b':
             tokens = input_ids
-            output_states = self.backbone(tokens, input_position, init_reset, batch_valid_length)
+            output_states = self.backbone(tokens, batch_valid_length)
+        elif self.model_type == 'baichuan2_13b':
+            tokens = input_ids
+            output_states = self.backbone(tokens, batch_valid_length)
         elif self.model_type == 'gpt2':
             tokens = input_ids
             if attention_mask is None:
-                attention_mask = self.model.not_equal(input_ids, self.model.eos_token_id)
+                attention_mask = self.model.not_equal(input_ids, self.model.pad_token_id)
             attention_mask = self.cast(attention_mask, mstype.float32)
             attention_mask = self.model.get_attention_mask(attention_mask)
             if not self.model.is_first_iteration:
@@ -96,7 +99,7 @@ class RewardModel(BaseModel):
                 tokens = input_ids
             output_states = self.backbone(tokens, input_position, init_reset, batch_valid_length)
         else:
-            input_mask = self.model.not_equal(input_ids, self.model.eos_token_id).astype(mstype.float32)
+            input_mask = self.model.not_equal(input_ids, self.model.pad_token_id).astype(mstype.float32)
             output_states, _ = self.backbone(input_ids, input_mask, init_reset, batch_valid_length)
 
         rewards = self.v_head0(output_states)
@@ -162,17 +165,24 @@ class CriticModel(BaseModel):
             init_reset = True,
             batch_valid_length = None
             output_states, _ = self.backbone(tokens, input_position, attention_mask)
-        elif self.model_type == 'baichuan':
+        elif self.model_type == 'baichuan2_7b':
             if self.model.phase == "train":
                 seq_length = seq_length - 1
                 tokens = self.model.slice(input_ids, (0, 0), (batch_size, seq_length), (1, 1))
             else:
                 tokens = input_ids
-            output_states = self.backbone(tokens, input_position)
+            output_states = self.backbone(tokens)
+        elif self.model_type == 'baichuan2_13b':
+            if self.model.phase == "train":
+                seq_length = seq_length - 1
+                tokens = self.model.slice(input_ids, (0, 0), (batch_size, seq_length), (1, 1))
+            else:
+                tokens = input_ids
+            output_states = self.backbone(tokens)
         elif self.model_type == 'gpt2':
             tokens = input_ids
             if attention_mask is None:
-                attention_mask = self.model.not_equal(input_ids, self.model.eos_token_id)
+                attention_mask = self.model.not_equal(input_ids, self.model.pad_token_id)
             attention_mask = self.cast(attention_mask, mstype.float32)
             attention_mask = self.model.get_attention_mask(attention_mask)
             if not self.model.is_first_iteration:
@@ -194,7 +204,7 @@ class CriticModel(BaseModel):
         else:
             init_reset = True
             batch_valid_length = None
-            input_mask = self.model.not_equal(input_ids, self.model.eos_token_id).astype(mstype.float32)
+            input_mask = self.model.not_equal(input_ids, self.model.pad_token_id).astype(mstype.float32)
             output_states, _ = self.backbone(input_ids, input_mask, init_reset, batch_valid_length)
 
         values = self.v_head0(output_states)

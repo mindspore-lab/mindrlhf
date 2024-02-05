@@ -231,14 +231,18 @@ class CausalLMHydraWithValueHead(BaseModel):
             output_states, embedding_table = self.backbone(tokens, input_position, attention_mask,
                                                            init_reset, batch_valid_length)
             logits_2d = self.lm_head(output_states, embedding_table)
-        elif self.model_type == 'baichuan':
+        elif self.model_type == 'baichuan2_7b':
             tokens = input_ids
-            output_states = self.backbone(tokens, input_position, init_reset, batch_valid_length)
+            output_states = self.backbone(tokens, batch_valid_length)
+            logits_2d = self.lm_head(output_states)
+        elif self.model_type == 'baichuan2_13b':
+            tokens = input_ids
+            output_states = self.backbone(tokens, batch_valid_length)
             logits_2d = self.lm_head(output_states)
         elif self.model_type == 'gpt2':
             tokens = input_ids
             if attention_mask is None:
-                attention_mask = self.model.not_equal(input_ids, self.model.eos_token_id)
+                attention_mask = self.model.not_equal(input_ids, self.model.pad_token_id)
             attention_mask = self.cast(attention_mask, mstype.float32)
             attention_mask = self.model.get_attention_mask(attention_mask)
             if not self.model.is_first_iteration:
@@ -265,7 +269,7 @@ class CausalLMHydraWithValueHead(BaseModel):
             if self.model.use_past:
                 input_mask = self.model.input_mask_all_ones
             else:
-                input_mask = self.model.not_equal(tokens, self.model.eos_token_id).astype(mstype.float32)
+                input_mask = self.model.not_equal(tokens, self.model.pad_token_id).astype(mstype.float32)
 
             output_states, embedding_table = self.backbone(tokens, input_mask, init_reset, batch_valid_length)
             logits_2d = self.lm_head(output_states, embedding_table)

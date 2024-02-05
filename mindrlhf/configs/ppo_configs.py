@@ -26,7 +26,7 @@ class PPOConfig:
     T_max: int = 100000
     eta_min: float = 5.0e-6
 
-    num_rollouts: int = 1
+    num_rollouts: int = 8
     chunk_size: int = 1
     ppo_epochs: int = 1
     init_kl_coef: float = 0.1
