@@ -188,7 +188,7 @@ class PPOTrainer:
 
         generate_begin_time = time.time()
         print("input_ids shape", input_ids.shape)
-        outputs = self.ppo_model.policy_model.model.generate(input_ids_list, max_length=self.ppo_config.max_decode_length)
+        outputs = self.ppo_model.policy_model.model.generate(input_ids_list, max_new_tokens=self.ppo_config.max_decode_length)
         print("Generating elapsed time: ", time.time() - generate_begin_time)
         for i in range(len(input_ids_list)):
             x = outputs[i][prompt_len[i]: prompt_len[i] + self.ppo_config.max_decode_length]

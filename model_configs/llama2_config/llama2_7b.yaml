@@ -160,7 +160,7 @@ model:
     use_past_shard: False
     checkpoint_name_or_path: ""
     repetition_penalty: 1
-    max_decode_length: 1
+    max_decode_length: 1024
     top_k: 3
     top_p: 1
     do_sample: False

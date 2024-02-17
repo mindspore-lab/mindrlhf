@@ -14,5 +14,5 @@
 ### 脚本执行方法
 以8卡为例，执行以下命令即可开始训练：
 ```Shell
-bash example/llama2_7b_train_tutorial/run_distributed_train.sh /path/to/dataset.mindrecord /path/to/hccl_8p_01234567_127.0.0.1.json 0 8 /path/to/llama2_7b.yaml /path/to/llama2_7b.yaml
+bash examples/llama2_7b_train_tutorial/run_distribute_train.sh /path/to/dataset.mindrecord /path/to/hccl_8p_01234567_127.0.0.1.json 0 8 /path/to/llama2_7b.yaml /path/to/llama2_7b.yaml
 ```
