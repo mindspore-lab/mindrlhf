@@ -354,6 +354,7 @@ def get_testing_dataset_path(dataset_name):
     """Get dataset path for testing."""
     dataset_dict = {
         "cvalues_1024": "/path/cvalues_1024.mindrecord",
+        "cvalues_2048": "/path/cvalues_2048.mindrecord",
     }
     dataset = dataset_dict.get(dataset_name)
     if dataset is None:

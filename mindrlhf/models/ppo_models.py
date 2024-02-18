@@ -242,7 +242,7 @@ class CausalLMHydraWithValueHead(BaseModel):
         elif self.model_type == 'gpt2':
             tokens = input_ids
             if attention_mask is None:
-                attention_mask = self.model.not_equal(input_ids, self.model.pad_token_id)
+                attention_mask = self.model.not_equal(input_ids, self.model.eos_token_id)
             attention_mask = self.cast(attention_mask, mstype.float32)
             attention_mask = self.model.get_attention_mask(attention_mask)
             if not self.model.is_first_iteration:
