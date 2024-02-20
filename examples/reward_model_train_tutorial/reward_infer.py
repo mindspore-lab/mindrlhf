@@ -108,22 +108,22 @@ def run(args):
 
     for item in input_txt:
         prompt = item["prompt"].strip()
-        response = item["response"].strip()
-        token_dict = tokenizer(
-            prompt_format.format_map({"instruction": prompt, "response": response}),
-            truncation=True,
-            max_length=seq_length,
-            padding="max_length",
-            add_special_tokens=False,
-        )
-        input_ids = np.expand_dims(np.array(token_dict["input_ids"]), axis=0)
-        attention_mask = np.expand_dims(np.array(token_dict["attention_mask"]), axis=0)
-        end_ind = attention_mask.sum(-1)
-        input_ids = Tensor(input_ids, mstype.int32)
-        end_ind = Tensor(end_ind, mstype.int32)
-        logger.info(f"Sample:\n{prompt_format.format_map({'instruction': prompt, 'response': response})}")
-        end_score = model.infer(input_ids=input_ids, end_ind=end_ind)
-        logger.info(f"reward score: {end_score}")
+        for response in (item["pos_resp"].strip(), item["neg_resp"].strip()):
+            token_dict = tokenizer(
+                prompt_format.format_map({"instruction": prompt, "response": response}),
+                truncation=True,
+                max_length=seq_length,
+                padding="max_length",
+                add_special_tokens=False,
+            )
+            input_ids = np.expand_dims(np.array(token_dict["input_ids"]), axis=0)
+            attention_mask = np.expand_dims(np.array(token_dict["attention_mask"]), axis=0)
+            end_ind = attention_mask.sum(-1)
+            input_ids = Tensor(input_ids, mstype.int32)
+            end_ind = Tensor(end_ind, mstype.int32)
+            logger.info(f"Sample:\n{prompt_format.format_map({'instruction': prompt, 'response': response})}")
+            end_score = model.infer(input_ids=input_ids, end_ind=end_ind)
+            logger.info(f"reward score: {end_score}")
 
 
 if __name__ == "__main__":

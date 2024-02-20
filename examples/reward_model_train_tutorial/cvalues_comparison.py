@@ -122,7 +122,7 @@ def write_mindrecord(tokenizer, src_file, dst_file, seq_length=1024, pad_token_i
     chosen_total_len = 0
     reject_total_len = 0
     np.set_printoptions(threshold=np.inf)
-    for item in tqdm(get_txt(tokenizer, src_file, pad_token_id=pad_token_id)):
+    for item in tqdm(get_txt(tokenizer, src_file, seq_length=seq_length, pad_token_id=pad_token_id)):
         sample = item[0]
         writer.write_raw_data([sample])
         static_dict["count"] = static_dict["count"] + 1

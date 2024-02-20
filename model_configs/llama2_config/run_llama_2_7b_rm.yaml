@@ -95,7 +95,7 @@ callbacks:
   - type: CheckpointMointor
     prefix: "llama_2_7b"
     save_checkpoint_steps: 1000
-    keep_checkpoint_max: 200
+    keep_checkpoint_max: 10
     integrated_save: False
     async_save: False
   - type: ObsMonitor
