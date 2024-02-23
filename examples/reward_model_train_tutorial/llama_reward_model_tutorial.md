@@ -116,25 +116,25 @@ train_dataset_task:
 mindformers中提供了[hccl_tools.py](https://gitee.com/mindspore/mindformers/blob/dev/mindformers/tools/hccl_tools.py)脚本可以用来生成RANK_TABLE_FILE
 执行命令示例：
 ```shell
-python ./mindformers/tools/hccl_tools.py --device_num "[0,4]"
+python ./mindformers/tools/hccl_tools.py --device_num "[0,8]"
 ```
 
 #### 3.1.2 执行训练脚本训练
 在mindrlhf/examples/reward_model_train_tutorial下执行下面命令：
 ```shell
 execute_path=$(pwd)
-bash ../../../scripts/run_distribute_reward.sh \
-     "python ../reward_train.py \
-     --config ${execute_path}/../../../model_configs/llama2_config/run_llama_2_7b_rm.yaml \
-     --train_dataset ${execute_path}/../data/mindrecord/train_4096.mindrecord " \
-     hccl_4p_0123_127.0.0.1.json [0,4] 4
+bash ../../scripts/run_distribute_reward.sh \
+     "python reward_train.py \
+     --config ${execute_path}/../../model_configs/llama2_config/run_llama_2_7b_rm.yaml \
+     --train_dataset ${execute_path}/data/mindrecord/train_4096.mindrecord " \
+     hccl_8p_01234567_127.0.0.1.json [0,8] 8
 ```
 注意：如果在mindrlhf/model_configs/llama2_config/run_llama_2_7b_rm.yaml中train_dataset.data_loader.dataset_dir有配置训练数据路径，则可以不用输入'--train_dataset'参数
 
 正常情况下需要等待十几分钟作用才能完成模型编译并开始训练，训练成功时，在mindrlhf/examples/reward_model_train_tutorial/output/log/rank_0/info.log中会打印如下loss信息：
 
 ```shell
-print_output_info: Epoch:[  1/  2], step:[    2/29134], loss:[0.442/0.442], time:68580.279 ms, lr:8e-08, overflow cond: False, loss_scale: 128.0
+print_output_info: Epoch:[  1/  2], step:[    2/29134], loss: 0.744, time:68580.279 ms, lr:8e-08, overflow cond: False, loss_scale: 128.0
 ```
 #### 3.1.3 loss曲线的绘制
 在python环境中执行`pip install tensorboard`安装tensorboard，在mindrlhf/examples/reward_model_train_tutorial目录下执行下面命令, 实时将mindrlhf/examples/reward_model_train_tutorial/output/log/rank_0/info.log中loss信息解析出来并转换为tensorboard能识别的events.out.tfevents文件:
@@ -143,7 +143,7 @@ python reward_loss_plot.py --log_file output/log/rank_0/info.log --output_file_d
 ```
 接着执行下面命令，tensorboard将读取刚才生成events.out.tfevents文件并实时绘制loss曲线：
 ```shell
-tensorboard --logdir=loss_dir
+tensorboard --logdir=loss_dir --port=6006
 ```
 执行该命令后会输出下列内容：
 ```shell
@@ -195,11 +195,11 @@ eval_dataset_task:
 然后在mindrlhf/examples/reward_model_train_tutorial下执行下面命令：
 ```shell
 execute_path=$(pwd)
-bash ../../../scripts/run_distribute_reward.sh \
-     "python ../reward_eval.py \
-     --config ${execute_path}/../../../model_configs/llama2_config/run_llama_2_7b_rm.yaml \
+bash ../../scripts/run_distribute_reward.sh \
+     "python reward_eval.py \
+     --config ${execute_path}/../../model_configs/llama2_config/run_llama_2_7b_rm.yaml \
      --distributed_ckpt_path mindrlhf/examples/reward_model_train_tutorial/output_backup/checkpoint" \
-     hccl_4p_0123_127.0.0.1.json [0,4] 4
+     hccl_8p_01234567_127.0.0.1.json [0,8] 8
 ```
 说明：评估必须指定distributed_ckpt_path参数，该参数指定了用于评估的模型文件所在的目录，output_backup目录即刚才训练成功后生成的output目录的备份目录，默认评估脚本会取该目录下最新的模型文件由于评估
 
@@ -224,13 +224,13 @@ accuracy = np.sum(chosen_end_scores.asnumpy() > reject_end_scores.asnumpy()) / r
 在mindrlhf/examples/reward_model_train_tutorial下执行下面命令：
 ```shell
 execute_path=$(pwd)
-bash ../../../scripts/run_distribute_reward.sh \
-     "python ../reward_infer.py \
-     --config ${execute_path}/../../../model_configs/llama2_config/run_llama_2_7b_rm.yaml \
-     --data_file ${execute_path}/../data/jsonl/test.jsonl \
+bash ../../scripts/run_distribute_reward.sh \
+     "python reward_infer.py \
+     --config ${execute_path}/../../model_configs/llama2_config/run_llama_2_7b_rm.yaml \
+     --data_file ${execute_path}/data/jsonl/test.jsonl \
      --tokenizer llama2_7b \
      --distributed_ckpt_path mindrlhf/examples/reward_model_train_tutorial/output_backup/checkpoint" \
-     hccl_4p_0123_127.0.0.1.json [0,4] 4
+     hccl_8p_01234567_127.0.0.1.json [0,8] 8
 ```
 
 正常推理成功，在mindrlhf/examples/reward_model_train_tutorial/output/log/rank_0/info.log中会打印每个提示词对应回复的评分：
