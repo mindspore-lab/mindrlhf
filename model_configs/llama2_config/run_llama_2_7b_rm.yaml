@@ -75,7 +75,7 @@ eval_dataset_task:
 # default parallel of device num = 8 910A
 parallel_config:
   data_parallel: 1
-  model_parallel: 4
+  model_parallel: 8
   pipeline_stage: 1
   optimizer_shard: True
   micro_batch_num: 1

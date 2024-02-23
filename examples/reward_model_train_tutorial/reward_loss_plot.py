@@ -25,15 +25,14 @@ from tensorboard.backend.event_processing import event_accumulator
 
 
 def parse_line(text):
-    loss1 = re.findall(r"loss:\[(\d+\.\d+)/\d+\.\d+\]", text)
-    loss2 = re.findall(r"loss:\[\d+\.\d+/(\d+\.\d+)\]", text)
-    if loss1 and loss2:
-        return float(loss1[0]), float(loss2[0])
+    loss = re.findall(r"loss: (\d+\.\d+)", text)
+    if loss:
+        return float(loss[0])
     else:
-        return None, None
+        return None
 
 
-def parse_and_convert(log_file, loss_dir, parse_mode):
+def parse_and_convert(log_file, loss_dir, sink_size, parse_mode):
     print("start parse...")
     if os.path.exists(loss_dir):
         shutil.rmtree(loss_dir)
@@ -51,26 +50,20 @@ def parse_and_convert(log_file, loss_dir, parse_mode):
                     time.sleep(60)
                     f.seek(last_line)
                 else:
-                    loss1, loss2 = parse_line(line)
-                    if loss1 and loss2:
-                        count += 1
-                        writer.add_scalar("loss", loss1, count)
-                        print(f"Real-time parsing, step:{count} loss:{loss1} ")
-                        count += 1
-                        writer.add_scalar("loss", loss2, count)
-                        print(f"Real-time parsing, step:{count} loss:{loss2} ")
+                    loss = parse_line(line)
+                    if loss:
+                        count += sink_size
+                        writer.add_scalar("loss", loss, count)
+                        print(f"Real-time parsing, step:{count} loss:{loss} ")
         # One-time conversion after training
         else:
             lines = f.readlines()
             for line in lines:
-                loss1, loss2 = parse_line(line)
-                if loss1 and loss2:
-                    count += 1
-                    writer.add_scalar("loss", loss1, count)
-                    print(f"One-time parsing, step:{count} loss:{loss1} ")
-                    count += 1
-                    writer.add_scalar("loss", loss2, count)
-                    print(f"One-time parsing, step:{count} loss:{loss2} ")
+                loss = parse_line(line)
+                if loss:
+                    count += sink_size
+                    writer.add_scalar("loss", loss, count)
+                    print(f"One-time parsing, step:{count} loss:{loss} ")
 
     print("end parse..., size=", count)
 
@@ -80,8 +73,10 @@ if __name__ == "__main__":
     parser.add_argument('--log_file', default='output/log/rank_0/info.log', type=str,
                         help='the path of info.log.')
     parser.add_argument('--output_file_dir', default='loss_dir', type=str,
-                        help='the directory of generated tfevents file')
+                        help='the directory of generated tfevents file.')
+    parser.add_argument('--sink_size', default='2', type=int,
+                        help='the sink_size of model config.')
     parser.add_argument('--parse_mode', default='real-time', type=str,
                         help='set the mode for parsing logfiles, real-time or one-time.')
     args = parser.parse_args()
-    parse_and_convert(args.log_file, args.output_file_dir, args.parse_mode)
+    parse_and_convert(args.log_file, args.output_file_dir, args.sink_size, args.parse_mode)
