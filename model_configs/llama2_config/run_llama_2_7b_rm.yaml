@@ -13,7 +13,7 @@ trainer:
   model_name: 'llama_7b'
 
 runner_config:
-  epochs: 2
+  epochs: 1
   batch_size: 4
   sink_mode: True
   sink_size: 2
@@ -31,6 +31,7 @@ train_dataset: &train_dataset
     type: MindDataset
     dataset_dir: ""
     shuffle: True
+    num_samples: 52000
   input_columns: ["chosen_input_ids", "chosen_attention_mask",
                   "rejected_input_ids", "rejected_attention_mask",
                   "position_id", "loss_mask", "end_ind"]
@@ -57,6 +58,7 @@ eval_dataset: &eval_dataset
     type: MindDataset
     dataset_dir: ""
     shuffle: False
+    num_samples: 4000
   input_columns: ["chosen_input_ids", "chosen_attention_mask",
                   "rejected_input_ids", "rejected_attention_mask",
                   "position_id", "loss_mask", "end_ind"]
@@ -95,7 +97,7 @@ callbacks:
   - type: CheckpointMointor
     prefix: "llama_2_7b"
     save_checkpoint_steps: 1000
-    keep_checkpoint_max: 10
+    keep_checkpoint_max: 3
     integrated_save: False
     async_save: False
   - type: ObsMonitor

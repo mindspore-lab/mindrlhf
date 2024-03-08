@@ -4,7 +4,6 @@ import numpy as np
 import jsonlines
 from tqdm import tqdm
 from mindformers import AutoTokenizer
-from mindrlhf.models.baichuan2.baichuan2_tokenizer import Baichuan2Tokenizer
 from mindspore.mindrecord import FileWriter
 import argparse
 skip_count = 0
@@ -65,10 +64,10 @@ def get_txt(tokenizer, file_path, seq_length=1024, static=True, pad_token_id=0):
                 add_special_tokens=False,
             )
 
-            sample["chosen_input_ids"] = np.array(chosen_response_dict["input_ids"])
-            sample["chosen_attention_mask"] = np.array(chosen_response_dict["attention_mask"])
-            sample["rejected_input_ids"] = np.array(rejected_response_dict["input_ids"])
-            sample["rejected_attention_mask"] = np.array(rejected_response_dict["attention_mask"])
+            sample["chosen_input_ids"] = np.array(chosen_response_dict["input_ids"], dtype=np.int32)
+            sample["chosen_attention_mask"] = np.array(chosen_response_dict["attention_mask"], dtype=np.int32)
+            sample["rejected_input_ids"] = np.array(rejected_response_dict["input_ids"], dtype=np.int32)
+            sample["rejected_attention_mask"] = np.array(rejected_response_dict["attention_mask"], dtype=np.int32)
 
             try:
                 divergence_idx = np.nonzero(sample["chosen_input_ids"] != sample["rejected_input_ids"])[0][0]
@@ -77,7 +76,7 @@ def get_txt(tokenizer, file_path, seq_length=1024, static=True, pad_token_id=0):
                 print("skip_count: ", skip_count)
                 continue
 
-            sample["position_id"] = np.arange(seq_length)
+            sample["position_id"] = np.arange(seq_length, dtype=np.int32)
 
             c_idxs = np.nonzero(sample["chosen_input_ids"] == PAD_ID)
             if len(c_idxs[0]) != 0:
@@ -92,7 +91,7 @@ def get_txt(tokenizer, file_path, seq_length=1024, static=True, pad_token_id=0):
                 r_idx = len(sample["rejected_input_ids"])
 
             end_ind = max(c_idx, r_idx)
-            loss_mask = np.zeros(seq_length)
+            loss_mask = np.zeros(seq_length, dtype=np.int32)
             loss_mask[divergence_idx:end_ind] = 1
             sample["loss_mask"] = loss_mask
             sample["end_ind"] = end_ind
@@ -112,7 +111,6 @@ def write_mindrecord(tokenizer, src_file, dst_file, seq_length=1024, pad_token_i
 
     writer = FileWriter(file_name=dst_file, shard_num=1, overwrite=True)
     writer.add_schema(schema)
-    writer.open_and_set_header()
 
     static_dict = {"count": 0,
                    "prompt_max": 0, "prompt_min": seq_length+1, "prompt_avg": 0,
