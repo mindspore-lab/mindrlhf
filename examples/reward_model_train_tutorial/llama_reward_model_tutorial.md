@@ -43,7 +43,7 @@ response有3种类型，分别为拒绝&正向建议(safe and responsibility) > 
 执行命令示例：
 ```shell
 #在mindrlhf/examples/reward_model_train_tutorial下执行
-python cvalues_comparison.py --model llama2_7b   --src_file data/jsonl/train.jsonl --dst_file data/mindrecord/train_4096.mindrecord --seq_length 4096
+python cvalues_comparison.py --model llama2_7b   --src_file data/jsonl/train.jsonl --dst_file data/mindrecord/train_4096.mindrecord --seq_length 4096 --pad_token_id 2
 ```
 
 注意：执行该转换脚本前需要先安装 mindformers, mindspore
@@ -198,7 +198,8 @@ execute_path=$(pwd)
 bash ../../scripts/run_distribute_reward.sh \
      "python reward_eval.py \
      --config ${execute_path}/../../model_configs/llama2_config/run_llama_2_7b_rm.yaml \
-     --distributed_ckpt_path mindrlhf/examples/reward_model_train_tutorial/output_backup/checkpoint" \
+     --distributed_ckpt_path mindrlhf/examples/reward_model_train_tutorial/output_backup/checkpoint \
+     --load_all_ckpt True" \
      hccl_8p_01234567_127.0.0.1.json [0,8] 8
 ```
 说明：评估必须指定distributed_ckpt_path参数，该参数指定了用于评估的模型文件所在的目录，output_backup目录即刚才训练成功后生成的output目录的备份目录，默认评估脚本会取该目录下最新的模型文件由于评估
@@ -209,14 +210,19 @@ accuracy = np.sum(chosen_end_scores.asnumpy() > reject_end_scores.asnumpy()) / r
 ```
 执行成功后会在mindrlhf/examples/reward_model_train_tutorial/output/log/rank_0/info.log中会打印如下信息：
 ```
-[INFO] 2024-01-12 17:09:23,282 [../reward_eval.py:98] run: acc: [1.0]; avg acc: [0.9211517761033369]
-[INFO] 2024-01-12 17:09:24,980 [../reward_eval.py:98] run: acc: [1.0]; avg acc: [0.921236559139785]
-[INFO] 2024-01-12 17:09:26,678 [../reward_eval.py:98] run: acc: [1.0]; avg acc: [0.9213211600429646]
-[INFO] 2024-01-12 17:09:28,369 [../reward_eval.py:98] run: acc: [0.75]; avg acc: [0.921137339055794]
-[INFO] 2024-01-12 17:09:30,058 [../reward_eval.py:98] run: acc: [1.0]; avg acc: [0.9212218649517685]
-[INFO] 2024-01-12 17:09:31,745 [../reward_eval.py:98] run: acc: [1.0]; avg acc: [0.921306209850107]
-[INFO] 2024-01-12 17:09:33,430 [../reward_eval.py:98] run: acc: [0.75]; avg acc: [0.9211229946524064]
-[INFO] 2024-01-12 17:09:35,121 [../reward_eval.py:98] run: acc: [1.0]; avg acc: [0.9212072649572649]
+2024-03-07 23:00:02,432 - mindformers[../reward_eval.py:121] - INFO - acc: [1.0]; avg acc: [0.9218907987866531]
+2024-03-07 23:00:03,744 - mindformers[../reward_eval.py:121] - INFO - acc: [1.0]; avg acc: [0.921969696969697]
+2024-03-07 23:00:05,067 - mindformers[../reward_eval.py:121] - INFO - acc: [0.75]; avg acc: [0.9217961654894047]
+2024-03-07 23:00:06,391 - mindformers[../reward_eval.py:121] - INFO - acc: [0.75]; avg acc: [0.9216229838709677]
+2024-03-07 23:00:07,702 - mindformers[../reward_eval.py:121] - INFO - acc: [1.0]; avg acc: [0.9217019133937563]
+2024-03-07 23:00:09,032 - mindformers[../reward_eval.py:121] - INFO - acc: [0.75]; avg acc: [0.9215291750503019]
+2024-03-07 23:00:10,347 - mindformers[../reward_eval.py:121] - INFO - acc: [1.0]; avg acc: [0.9216080402010051]
+2024-03-07 23:00:11,660 - mindformers[../reward_eval.py:121] - INFO - acc: [1.0]; avg acc: [0.9216867469879518]
+2024-03-07 23:00:12,974 - mindformers[../reward_eval.py:121] - INFO - acc: [0.75]; avg acc: [0.9215145436308927]
+2024-03-07 23:00:14,284 - mindformers[../reward_eval.py:121] - INFO - acc: [1.0]; avg acc: [0.9215931863727455]
+2024-03-07 23:00:15,617 - mindformers[../reward_eval.py:121] - INFO - acc: [1.0]; avg acc: [0.9216716716716716]
+2024-03-07 23:00:16,930 - mindformers[../reward_eval.py:121] - INFO - acc: [1.0]; avg acc: [0.92175]
+2024-03-07 23:00:16,956 - mindformers[../reward_eval.py:122] - INFO - output_0305/checkpoint/rank_0/llama_2_7b_rank_0-6500_2.ckpt acc: [0.92175]
 ```
 
 ### 3.3 推理
