@@ -41,8 +41,8 @@ MindRLHF架构图如下：
 当前版本所依赖框架:
 |  依赖   | 版本|
 |  ----   | ----        |
-| MindSpore    | r2.2   |
-| Mindformers | r1.0    |
+| MindSpore    | r2.3   |
+| Mindformers | r1.2    |
 
 
 ## 支持列表
