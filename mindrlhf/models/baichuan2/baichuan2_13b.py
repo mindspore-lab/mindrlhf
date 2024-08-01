@@ -17,37 +17,29 @@ from typing import Optional
 import math
 import copy
 import numpy as np
-import mindspore as ms
 import mindspore.common.dtype as mstype
 
 try:
     from mindspore._checkparam import Validator
 except ImportError:
     import mindspore._checkparam as Validator
-from mindspore import Tensor, nn, ops, __version__
+from mindspore import Tensor, nn, ops
 from mindspore.common.parameter import Parameter
 from mindspore.context import ParallelMode
 from mindspore.ops import operations as P
 from mindspore.common.initializer import initializer, HeUniform
 from mindspore.parallel._utils import _get_parallel_mode, _is_sharding_propagation
 
-try:
-    # pylint: disable=W0611
-    from mindspore.nn.layer.flash_attention import FlashAttention
-    FLASHATTENTION_VALID = True
-except ImportError:
-    FLASHATTENTION_VALID = False
-
 from mindformers.core.loss.loss import CrossEntropyLoss
-from mindformers.models.base_model import BaseModel
-from mindformers.models.utils import cell_reuse
+from mindformers.modules.flash_attention import FlashAttention
+from mindformers.models.modeling_utils import PreTrainedModel
+from mindformers.models.utils import lazy_inline
 from mindformers.modules.transformer.op_parallel_config import _check_config
 from mindformers.modules.layers import Linear, _check_input_dtype, build_alibi_tensor_v2
 from mindformers.modules.transformer import TransformerOpParallelConfig, LowerTriangularMaskWithDynamic
-from mindformers.modules.kvcache_mgr import KVCacheMgr, KVCachePreprocess
-from mindformers.tools.utils import is_version_ge
+from mindformers.modules.infer_attention import InferAttention
 from mindformers.tools.register.register import MindFormerModuleType, MindFormerRegister
-from mindformers.models.llama.llama import layer_compute_dtype
+from mindformers.models.utils import set_layer_stage_recompute
 from mindformers.models.llama.llama_config import LlamaConfig
 from mindformers.models.llama.llama_layer import LlamaEmbedding, LlamaFeedForward, LlamaRMSNorm
 from mindformers.tools.logger import logger
@@ -55,8 +47,18 @@ from mindformers.tools.logger import logger
 __all__ = ['Baichuan13BV2ForCausalLM', 'Baichuan13BV2Model']
 
 
+class Baichuan2PreTrainedModel(PreTrainedModel):
+    """
+    An abstract class to handle weights initialization and a simple interface for downloading and loading pretrained
+    models.
+    """
+
+    config_class = LlamaConfig
+    base_model_prefix = "baichuan2"
+
+
 @MindFormerRegister.register(MindFormerModuleType.MODELS)
-class Baichuan13BV2ForCausalLM(BaseModel):
+class Baichuan13BV2ForCausalLM(Baichuan2PreTrainedModel):
     r"""
         Provide baichuan2_13B training loss or logits through network.
         Args:
@@ -66,13 +68,12 @@ class Baichuan13BV2ForCausalLM(BaseModel):
             input_ids(Tensor): the tokenized inputs with datatype int32, Tensor of shape :math:`(batch, seq\_length)`.
             labels(Tensor): the tokenized labels with datatype int32, Tensor of shape :math:`(batch, seq\_length)`.
             input_position(Tensor): current position, used by model.predict.
-            position_ids(Tensor): Reserved param, not used.
-            attention_mask(Tensor): Reserved param, not used.
-            input_embeds(Tensor): Reserved param, not used.
             init_reset(bool, optional): A bool tensor with shape [1], used to clear the past key parameter and
               past value parameter used in the incremental prediction. Default True.
             batch_valid_length(Tensor): the past calculated the index with datatype int32, used for incremental
               prediction. Tensor of shape :math:`(batch_size,)`. Default None.
+            block_tables (Tensor[int64]): Store mapping tables for each sequence.
+            slot_mapping (Tensor[int32]): Store token cache physical slot index.
 
         Returns:
             Tensor, the loss or logits of the network.
@@ -84,7 +85,7 @@ class Baichuan13BV2ForCausalLM(BaseModel):
             >>> network = Baichuan13BV2ForCausalLM(config=config)
         """
 
-    @cell_reuse
+    @lazy_inline
     def __init__(self, config: LlamaConfig = None):
         super(Baichuan13BV2ForCausalLM, self).__init__(config, auto_prefix=True)
         _check_config(config.parallel_config)
@@ -145,42 +146,47 @@ class Baichuan13BV2ForCausalLM(BaseModel):
             self.reshape.add_prim_attr("skip_redistribution", True)
 
         self.load_checkpoint(config)
+        self.set_model_predict_config()
 
     # pylint: disable=W0613
     def prepare_inputs_for_generation(self, input_ids, **kwargs):
+        if self.config.is_dynamic and "origin_inputs" in kwargs:
+            input_ids = kwargs["origin_inputs"]
         return {
             "input_ids": Tensor(input_ids, mstype.int32)
         }
 
+    def set_dynamic_inputs(self, **kwargs):
+        dynamic_input_ids = Tensor(shape=[None, None], dtype=mstype.int32)
+        dynamic_input_position = Tensor(shape=[None], dtype=mstype.int32)
+        dynamic_init_reset = Tensor([False], mstype.bool_)
+        dynamic_batch_valid_length = Tensor(shape=[None, None], dtype=mstype.int32)
+        dynamic_block_tables = Tensor(shape=[None, None], dtype=mstype.int32)
+        dynamic_slot_mapping = Tensor(shape=[None], dtype=mstype.int32)
+        self.set_inputs(dynamic_input_ids, None, dynamic_input_position, None, None, None, dynamic_init_reset,
+                        dynamic_batch_valid_length, None, None, dynamic_block_tables, dynamic_slot_mapping)
+        logger.info("Set dynamic input for baichuan2.")
+
     # pylint: disable=W0613
-    def prepare_inputs_for_export(self, full_model=True):
-        """Get Baichuan13BV2 model input tuple for export."""
-        dyn = self.config.is_dynamic
-        if dyn:
-            logger.info(f"Exporting dynamic MindIR...")
-        seq_length = self.seq_length
-        bs = None if dyn else self.config.batch_size
-        seq_len = None if dyn else self.seq_length
+    def prepare_inputs_for_predict_layout(self, input_ids, **kwargs):
+        """Get Baichuan13BV2 model input tuple for transform ckpt."""
+        input_ids = Tensor(input_ids, mstype.int32)
+        bs, seq = input_ids.shape[0], input_ids.shape[1]
+        slot_mapping = Tensor(np.ones(shape=tuple([bs*seq])), mstype.int32)
+        return input_ids, None, None, None, None, None, None, None, None, None, None, slot_mapping
 
-        def dummy_tensor(shape, dtype):
-            if None in shape:
-                return Tensor(shape=shape, dtype=dtype)
-            return Tensor(np.ones(shape=tuple(shape)), dtype=dtype)
-
-        batch_valid_length = dummy_tensor(shape=[bs], dtype=ms.int32)
-        batch_index = dummy_tensor(shape=[bs], dtype=ms.int64)
-        zactivate_len = dummy_tensor(shape=[seq_len], dtype=ms.int64)
-        if full_model:
-            logger.info('\nexporting with batch_size = %s, seq = %s ...', self.config.batch_size, seq_length)
-            input_ids = dummy_tensor(shape=[bs, seq_len], dtype=ms.int32)
-        else:
-            logger.info('\nexporting with batch_size = %s, seq = 1 ...', self.config.batch_size)
-            input_ids = dummy_tensor(shape=[bs, 1], dtype=ms.int32)
-        return input_ids, None, None, None, None, None, None, batch_valid_length, batch_index, zactivate_len
+    def add_flags_custom(self, is_first_iteration):
+        """Add customized attributes for specific cells in the model."""
+        self.add_flags(is_first_iteration=is_first_iteration)
+        self.model.add_flags(is_first_iteration=is_first_iteration)
+        for layer in self.model.layers:
+            layer.add_flags(is_first_iteration=is_first_iteration)
+            layer.attention.infer_attention.add_flags(is_first_iteration=is_first_iteration)
 
     # pylint: disable=W0613
     def construct(self, input_ids, labels=None, input_position=None, position_ids=None, attention_mask=None,
-                  input_embeds=None, init_reset=True, batch_valid_length=None, batch_index=None, zactivate_len=None):
+                  input_embeds=None, init_reset=True, batch_valid_length=None, batch_index=None, zactivate_len=None,
+                  block_tables=None, slot_mapping=None):
         """Baichuan13BV2ForCausalLM forward."""
         bsz, seqlen = self.shape(input_ids)
         if self.use_past:
@@ -192,9 +198,7 @@ class Baichuan13BV2ForCausalLM(BaseModel):
             tokens = input_ids
         if batch_valid_length is not None:
             batch_valid_length = self.reshape(batch_valid_length, (-1,))
-        if not self.is_first_iteration:
-            batch_valid_length = self.sub_batch_valid_len(batch_valid_length, 1)
-        output = self.model(tokens, batch_valid_length, batch_index, zactivate_len)
+        output = self.model(tokens, batch_valid_length, block_tables, slot_mapping)
         pre_gather = (not self.use_past or self.is_first_iteration) and batch_valid_length is not None
         if pre_gather:
             output = self.gather(output, self.sub_batch_valid_len(batch_valid_length, 1), 1)
@@ -211,11 +215,6 @@ class Baichuan13BV2ForCausalLM(BaseModel):
                 input_mask = self.mul(input_mask, label_mask)
 
         if not self.training:
-            if not pre_gather:
-                logits = self.reshape(logits, (bsz, seqlen, -1))
-            logits = self.cast(logits, mstype.float32)
-            # makes cast effective to avoid allgather issue in Mindspore1.10
-            input_mask = self.add(input_mask, 1)
             return logits, tokens, input_mask
 
         if logits.ndim > 2:
@@ -226,8 +225,13 @@ class Baichuan13BV2ForCausalLM(BaseModel):
         loss = self.loss(logits, labels, input_mask)
         return loss
 
+    def kvcache(self, layer_idx):
+        key_cache = self.model.layers[layer_idx].attention.infer_attention.paged_attention_mgr.key_cache
+        value_cache = self.model.layers[layer_idx].attention.infer_attention.paged_attention_mgr.value_cache
+        return key_cache, value_cache
 
-class Baichuan13BV2Model(BaseModel):
+
+class Baichuan13BV2Model(Baichuan2PreTrainedModel):
     r"""
     Transformer decoder consisting of *config.num_hidden_layers* layers. Each layer is a [`Baichuan13BV2DecoderLayer`]
     Args:
@@ -256,23 +260,19 @@ class Baichuan13BV2Model(BaseModel):
         self.is_first_iteration = True
         self.use_past = config.use_past
         self.is_dynamic = config.is_dynamic
-        self.use_kvcache_op = config.use_kvcache_op
-        self.is_flexible_shape = config.is_flexible_shape
-        self.use_flash_attention = config.use_flash_attention and FLASHATTENTION_VALID
+        self.use_flash_attention = config.use_flash_attention
         # only support flash attention in train and prefill predict process.
-        if self.use_past:
-            self.use_flash_attention = False
         if self.use_flash_attention:
             logger.info("Enable flash attention.")
-        elif config.use_flash_attention:
-            logger.info("Current MindSpore do not support flash attention.")
+        # only support paged attention in predict process.
+        self.block_size = config.block_size
+        self.num_blocks = config.num_blocks
 
         self.shape = P.Shape()
         self.reshape = P.Reshape()
         self.cast = P.Cast()
         self.mul_mask = P.Mul()
         self.mul_alibi = P.Mul()
-        self.mul_alibi1 = P.Mul()
         self.sub = P.Sub()
         self.tile = P.Tile()
         self.expand_dims = P.ExpandDims()
@@ -286,7 +286,8 @@ class Baichuan13BV2Model(BaseModel):
                                                           compute_type=config.compute_dtype,
                                                           is_dynamic=config.is_dynamic,
                                                           pad_token_id=config.pad_token_id,
-                                                          use_flash_attention=config.use_flash_attention)
+                                                          use_flash_attention=config.use_flash_attention and not
+                                                          config.use_past)
         self.tok_embeddings = LlamaEmbedding(vocab_table_size=config.vocab_size,
                                              embedding_size=config.hidden_size,
                                              param_init_type=config.param_init_type,
@@ -309,20 +310,14 @@ class Baichuan13BV2Model(BaseModel):
                                            param_init_type=config.param_init_type,
                                            use_past=config.use_past,
                                            is_dynamic=config.is_dynamic,
-                                           use_kvcache_op=config.use_kvcache_op,
-                                           is_flexible_shape=config.is_flexible_shape,
                                            use_flash_attention=self.use_flash_attention,
+                                           block_size=self.block_size,
+                                           num_blocks=self.num_blocks,
                                            parallel_config=config.parallel_config)
-            layer_compute_dtype(layer, layer_id, config.offset, config.parallel_config,
-                                config.num_layers, select_recompute=config.parallel_config.recompute.select_recompute)
+            set_layer_stage_recompute(layer, layer_id, config.offset, config.parallel_config, config.num_layers)
             self.layers.append(layer)
         self.norm_out = LlamaRMSNorm(config.hidden_size, config.rms_norm_eps,
-                                     compute_type=config.layernorm_compute_type, is_dynamic=config.is_dynamic)
-        self.kvcache_preprocess = KVCachePreprocess(max_batch_size=config.batch_size,
-                                                    max_seq_length=config.seq_length,
-                                                    is_dynamic=config.is_dynamic,
-                                                    use_kvcache_op=config.use_kvcache_op,
-                                                    is_flexible_shape=config.is_flexible_shape)
+                                     compute_type=config.layernorm_compute_type)
         self.alibi_tensor = build_alibi_tensor_v2(seq_len=config.seq_length,
                                                   num_heads=config.num_heads,
                                                   return_tensors='ms',
@@ -345,7 +340,6 @@ class Baichuan13BV2Model(BaseModel):
             self.sub.shard(((1,), (dp, 1, 1)))
             self.mul_mask.shard(((dp, 1, 1, 1), (1,)))
             self.mul_alibi.shard(((1, mp, 1, 1), (dp, 1, 1, 1)))
-            self.mul_alibi1.shard(((dp, mp, 1, 1), (dp, 1, 1, 1)))
 
             self.expand_dims.shard(((dp, 1, 1),))
             self.not_equal.shard(((dp, 1), ()))
@@ -356,59 +350,31 @@ class Baichuan13BV2Model(BaseModel):
             self.reshape.add_prim_attr("skip_redistribution", True)
 
     # pylint: disable=W0613
-    def construct(self, tokens: Tensor, batch_valid_length=None, batch_index=None, zactivate_len=None):
+    def construct(self, tokens: Tensor, batch_valid_length=None, block_tables=None, slot_mapping=None):
         """Forward of baichuan2_13b model."""
         # preprocess
         bs, seq_len = self.shape(tokens)
-        if self.use_past:
-            if not isinstance(batch_valid_length, Tensor):
-                batch_valid_length = self.ones((bs,), mstype.int32)
 
         if not self.use_past:
-            mask = self.casual_mask(tokens)  # mask: [bs, seq, seq]
-            mask = self.casual_mask.post_process(mask)
+            mask = self.casual_mask(tokens)  # mask: mask: [bs , 1, seq, seq]
             input_mask = self.cast(self.not_equal(tokens, self.pad_token_id), mstype.float16)
             alibi_tensor = self.mul_alibi(self.alibi_tensor, self.reshape(input_mask, (bs, 1, -1, 1)))
-            kvcache_inputs = None
         else:
+            mask = None
             if self.is_first_iteration:
-                mask = self.casual_mask(tokens)  # mask: [bs, seq, seq]
-                input_mask = self.cast(self.not_equal(tokens, self.pad_token_id), mstype.float16)
-                # alibi_tensor: [bs, num_heads, seq, seq]
-                if self.is_dynamic:
-                    alibi_tensor = self.slice(self.alibi_tensor, (0, 0, 0, 0),
-                                              (1, self.alibi_tensor.shape[1], seq_len, seq_len), (1, 1, 1, 1))
-                else:
-                    alibi_tensor = self.alibi_tensor
-                alibi_tensor = self.mul_alibi(alibi_tensor, self.reshape(input_mask, (bs, 1, -1, 1)))
+                if not self.use_flash_attention:
+                    mask = self.casual_mask(tokens)  # mask: [bs , 1, seq, seq]
+                alibi_tensor = self.slice(self.alibi_tensor, (0, 0, 0, 0),
+                                          (1, self.alibi_tensor.shape[1], seq_len, seq_len), (1, 1, 1, 1))
             else:
-                if self.is_dynamic and self.is_flexible_shape and not self.use_kvcache_op:
-                    mask = self.casual_mask.increment_slice(
-                        self.kvcache_preprocess.range,
-                        self.kvcache_preprocess.max_cache_length // bs, batch_valid_length,
-                        zactivate_len)
-                else:
-                    mask = self.casual_mask.increment(self.kvcache_preprocess.range, batch_valid_length, zactivate_len)
-                # mask: [bs, 1, 1]
-                if self.is_dynamic:
-                    alibi_tensor = self.slice(self.alibi_tensor, (0, 0, 0, 0),
-                                              (1, self.alibi_tensor.shape[1], self.shape(mask)[-1],
-                                               self.shape(mask)[-1]),
-                                              (1, 1, 1, 1))
-                else:
-                    alibi_tensor = self.alibi_tensor
-                alibi_tensor = self.gather(alibi_tensor, batch_valid_length, 2)
+                alibi_tensor = self.gather(self.alibi_tensor, batch_valid_length, 2)
                 alibi_tensor = self.transpose(alibi_tensor, (2, 1, 0, 3))
-                alibi_tensor = self.mul_alibi1(alibi_tensor, self.expand_dims(mask, 1))
-            mask = self.casual_mask.post_process(mask)
-            kvcache_inputs = self.kvcache_preprocess(bs, batch_valid_length, batch_index, zactivate_len)
-
         # tokens: [bs, seq/1]
         h = self.tok_embeddings(tokens)
         h = self.reshape(h, (bs, seq_len, self.hidden_size))
         # h: [bs, seq/1, hidden_dim]
         for i in range(self.num_layers):
-            h = self.layers[i](h, alibi_tensor, mask, kvcache_inputs=kvcache_inputs)
+            h = self.layers[i](h, alibi_tensor, mask, batch_valid_length, block_tables, slot_mapping)
         output = self.norm_out(h)
         return output
 
@@ -452,16 +418,10 @@ class Baichuan13BAttention(nn.Cell):
             - **mask** (Tensor) - If the use_past is False or is_first_iteration=True, the attention mask
                 matrix should ba (batch_size, src_seq_length, tgt_seq_length), or None. None means there will be no mask
                 in softmax computation. Otherwise, the mask must be (batch_size, 1, tgt_seq_length)
-            - **key_past** (Tensor) - Float16 tensor with shape (batch_size, num_heads, head_dim, tgt_seq_length).
-                The past calculated key vector. Used for incremental prediction when the use_past is True.
-                Default None.
-            - **value_past** (Tensor) - Float16 tensor with shape (batch_size, num_heads, tgt_seq_length,
-                head_dim).
-                The past calculated value vector. Used for incremental prediction when the use_past is True.
-                Default None.
             - **batch_valid_length** (Tensor) - Int32 tensor with shape (batch_size,) the past calculated the index.
                 Used for incremental prediction when the use_past is True. Default None.
-
+            - **block_tables** (Tensor[int64]) - Store mapping tables for each sequence.
+            - **slot_mapping** (Tensor[int32]) - Store token cache physical slot index.
     Outputs:
             Tuple, a tuple contains(`output`, `layer_present`)
 
@@ -485,9 +445,9 @@ class Baichuan13BAttention(nn.Cell):
                  param_init_type=mstype.float32,
                  use_past=False,
                  is_dynamic=False,
-                 use_kvcache_op=False,
-                 is_flexible_shape=False,
                  use_flash_attention=False,
+                 block_size: int = 128,
+                 num_blocks: int = 224,
                  parallel_config=TransformerOpParallelConfig()):
         super().__init__()
         self.batch_size = batch_size
@@ -502,7 +462,9 @@ class Baichuan13BAttention(nn.Cell):
         self.softmax_dtype = softmax_compute_dtype
         self.is_first_iteration = True
         self.use_past = use_past
-        self.use_flash_attention = use_flash_attention and FLASHATTENTION_VALID
+        self.use_flash_attention = use_flash_attention
+        self.block_size = block_size
+        self.num_blocks = num_blocks
 
         if self.hidden_size % self.n_head != 0:
             raise ValueError("For 'MultiHeadAttention', the class variable 'hidden_size' must be a multiple "
@@ -518,6 +480,8 @@ class Baichuan13BAttention(nn.Cell):
 
         self.shape = P.Shape()
         self.reshape = P.Reshape()
+        if is_dynamic:
+            self.reshape.add_prim_attr("skip_redistribution", True)
         self.transpose = P.Transpose()
         self.merger_head_transpose = P.Transpose()
         self.batch_matmul = P.BatchMatMul()
@@ -582,28 +546,31 @@ class Baichuan13BAttention(nn.Cell):
             self.softmax.recompute()
             self.batch_matmul.recompute()
 
-        if not is_version_ge(__version__, "2.2.0"):
-            self.use_flash_attention = False
-            logger.info("Current MindSpore do not support flash attention, please upgrade to 2.2.0 or higher")
         if self.use_flash_attention:
-            self.flash_attention = FlashAttention(self.head_dim, n_heads, dp=dp, mp=mp, prev_block_num=65536,
-                                                  next_block_num=0, high_precision=True, alibi=True)
-
+            self.flash_attention = FlashAttention(head_num=n_heads,
+                                                  scale_value=1. / math.sqrt(self.head_dim),
+                                                  input_layout='BNSD',
+                                                  pre_tokens=65536,
+                                                  next_tokens=0,
+                                                  use_alibi_mask=True)
+            self.flash_attention.shard(parallel_config)
         if self.use_past:
-            self.kvcache_mgr = KVCacheMgr(self.n_kv_head, self.head_dim,
-                                          max_batch_size=batch_size,
-                                          max_seq_length=seq_length,
-                                          compute_dtype=compute_dtype,
-                                          is_dynamic=is_dynamic,
-                                          use_kvcache_op=use_kvcache_op,
-                                          is_flexible_shape=is_flexible_shape)
-            self.kvcache_mgr.shard(parallel_config)
+            self.infer_attention = InferAttention(self.n_head,
+                                                  self.head_dim,
+                                                  self.n_kv_head,
+                                                  scale_value=1. / math.sqrt(self.head_dim),
+                                                  pre_tokens=65536,
+                                                  next_tokens=65536,
+                                                  block_size=self.block_size,
+                                                  num_blocks=self.num_blocks,
+                                                  use_alibi_mask=True,
+                                                  use_rope_rotary_emb=False,
+                                                  use_flash_attention=use_flash_attention,
+                                                  compute_dtype=compute_dtype).shard(parallel_config)
+            self.infer_attention.shard(parallel_config)
 
-        if is_dynamic:
-            self.reshape.add_prim_attr("skip_redistribution", True)
-
-    # pylint: disable=W0613
-    def construct(self, x: Tensor, alibi_tensor: Tensor, mask=None, kvcache_inputs=None):
+    def construct(self, x: Tensor, alibi_tensor: Tensor, mask=None, batch_valid_length=None, block_tables=None,
+                  slot_mapping=None):
         """Forward process of the MultiHeadAttention"""
         ori_dtype = x.dtype
         # [bs, seq/1, hidden_dim] or [bs * seq/1, hidden_dim]
@@ -612,32 +579,23 @@ class Baichuan13BAttention(nn.Cell):
         query = self.cast(self.wq(x), self.dtype)  # dp, 1 -> dp, mp
         key = self.cast(self.wk(x), self.dtype)  # dp, 1 -> dp, mp
         value = self.cast(self.wv(x), self.dtype)  # dp, 1 -> dp, mp
-        if self.use_past and not self.is_first_iteration:
-            query = self.reshape(query, (bs, self.n_head, 1, self.head_dim))
-            key = self.reshape(key, (bs, self.n_kv_head, 1, self.head_dim))
-            value = self.reshape(value, (bs, self.n_kv_head, 1, self.head_dim))
-        else:
-            query = self.reshape(query, (bs, seq_len, self.n_head, self.head_dim))
-            key = self.reshape(key, (bs, seq_len, self.n_kv_head, self.head_dim))
-            value = self.reshape(value, (bs, seq_len, self.n_kv_head, self.head_dim))
-            # [bs, seq/1, n_head/n_kv_head, head_dim]
-            query = self.transpose(query, (0, 2, 1, 3))
-            key = self.transpose(key, (0, 2, 1, 3))
-            value = self.transpose(value, (0, 2, 1, 3))
-        # [bs, n_head/n_kv_head, seq/1, head_dim]
 
-        # kv cache: [bs, n_kv_head, 1, head_dim] -> [bs, n_kv_head, seq, head_dim]
+        # key and value for current token(s)
         if self.use_past:
-            key, value = self.kvcache_mgr(key, value, kvcache_inputs)
-        # kv share: [bs, n_kv_head, seq, head_dim] -> [bs, n_head, seq, head_dim]
-        key = self._repeat_kv(key, self.n_rep)
-        value = self._repeat_kv(value, self.n_rep)
-        # q, k, v: [bs, n_head, seq/1, head_dim], [bs, n_head, seq, head_dim], [bs, n_head, seq, head_dim]
-        if self.use_flash_attention:
-            attention = self.flash_attention(query, key, value, mask, alibi_tensor)
-            attention = self._merge_heads(attention)
+            attention = self.infer_attention(query, key, value, batch_valid_length, block_tables, slot_mapping,
+                                             None, mask, alibi_tensor)
         else:
-            attention = self._attn(query, key, value, mask, alibi_tensor)
+            query = self.transpose(self.reshape(query, (bs, seq_len, self.n_head, self.head_dim)), (0, 2, 1, 3))
+            key = self.transpose(self.reshape(key, (bs, seq_len, self.n_kv_head, self.head_dim)), (0, 2, 1, 3))
+            value = self.transpose(self.reshape(value, (bs, seq_len, self.n_kv_head, self.head_dim)), (0, 2, 1, 3))
+            if self.use_flash_attention:
+                attention = self.flash_attention(query, key, value, mask, alibi_tensor)
+                attention = self._merge_heads(attention)
+            else:
+                key = self._repeat_kv(key, self.n_rep)
+                value = self._repeat_kv(value, self.n_rep)
+                attention = self._attn(query, key, value, mask, alibi_tensor)
+
         # [bs, seq/1, hidden_dim] or [bs * seq/1, hidden_dim]
         output = self.wo(attention)  # dp, mp -> dp, 1 / dp * mp, 1
         output = self.cast(output, ori_dtype)
@@ -745,10 +703,10 @@ class Baichuan13BDecodeLayer(nn.Cell):
             False or is_first_iteration=True,
               the attention mask matrix should ba [batch_size, seq_length, seq_length], or None. None means there will
               be no mask in softmax computation. Otherwise, should be [batch_size, 1, hidden_size]
-            - **init_reset** (Tensor) - A bool tensor with shape [1], used to clear the past key parameter and
-              past value parameter used in the incremental prediction. Only valid when use_past is True. Default True.
             - **batch_valid_length** (Tensor) - Int32 tensor with shape [batch_size] the past calculated the index.
               Used for incremental prediction when the use_past is True. Default None.
+            - **block_tables** (Tensor[int64]) - Store mapping tables for each sequence.
+            - **slot_mapping** (Tensor[int32]) - Store token cache physical slot index.
 
         Outputs:
             Tuple, a tuple contains(`output`, `layer_present`).
@@ -780,9 +738,9 @@ class Baichuan13BDecodeLayer(nn.Cell):
                  param_init_type=mstype.float32,
                  use_past=False,
                  is_dynamic=False,
-                 use_kvcache_op=False,
-                 is_flexible_shape=False,
                  use_flash_attention=False,
+                 block_size: int = 128,
+                 num_blocks: int = 224,
                  parallel_config=TransformerOpParallelConfig()):
         super().__init__()
         if batch_size or use_past:
@@ -805,11 +763,11 @@ class Baichuan13BDecodeLayer(nn.Cell):
 
         self.shape = P.Shape()
         self.reshape = P.Reshape()
+        if is_dynamic:
+            self.reshape.add_prim_attr("skip_redistribution", True)
         self.add = P.Add()
-        self.attention_norm = LlamaRMSNorm(self.hidden_size, norm_eps, compute_type=layernorm_compute_dtype,
-                                           is_dynamic=is_dynamic)
-        self.ffn_norm = LlamaRMSNorm(self.hidden_size, norm_eps, compute_type=layernorm_compute_dtype,
-                                     is_dynamic=is_dynamic)
+        self.attention_norm = LlamaRMSNorm(self.hidden_size, norm_eps, compute_type=layernorm_compute_dtype)
+        self.ffn_norm = LlamaRMSNorm(self.hidden_size, norm_eps, compute_type=layernorm_compute_dtype)
         self.attention = Baichuan13BAttention(batch_size=batch_size,
                                               seq_length=seq_length,
                                               dim=dim,
@@ -820,9 +778,9 @@ class Baichuan13BDecodeLayer(nn.Cell):
                                               param_init_type=param_init_type,
                                               use_past=use_past,
                                               is_dynamic=is_dynamic,
-                                              use_kvcache_op=use_kvcache_op,
-                                              is_flexible_shape=is_flexible_shape,
                                               use_flash_attention=use_flash_attention,
+                                              block_size=block_size,
+                                              num_blocks=num_blocks,
                                               parallel_config=parallel_config)
         self.feed_forward = LlamaFeedForward(dim=self.hidden_size,
                                              intermediate_size=intermediate_size,
@@ -848,15 +806,12 @@ class Baichuan13BDecodeLayer(nn.Cell):
                 self.ffn_norm.shard((dp, mp, 1))
                 self.feed_forward.w2.shard(((dp, mp), (1, mp)), out_strategy_matmul=((dp * mp, 1),))
 
-        if is_dynamic:
-            self.reshape.add_prim_attr("skip_redistribution", True)
-
-    def construct(self, x, alibi_tensor, mask=None, kvcache_inputs=None):
+    def construct(self, x, alibi_tensor, mask=None, batch_valid_length=None, block_tables=None, slot_mapping=None):
         """ Forward of transformer block. """
         self._check_input(x, alibi_tensor, mask)
         input_x = self.attention_norm(x)
         # [bs, seq/1, hidden_dim]
-        h = self.attention(input_x, alibi_tensor, mask, kvcache_inputs)
+        h = self.attention(input_x, alibi_tensor, mask, batch_valid_length, block_tables, slot_mapping)
         h = self.add(x, h)
         ffn_norm = self.ffn_norm(h)
         # [bs, seq/1, hidden_dim] or [bs * seq/1, hidden_dim]
