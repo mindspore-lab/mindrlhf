@@ -15,6 +15,7 @@ def load_json_file(file_path):
             raw_data.append(item)
     return raw_data
 
+
 def process_data(tokenizer, raw_data, max_prompt_length, seq_length, pad_token_id):
     template = ("{prompt}{response}")
 
@@ -42,10 +43,10 @@ def process_data(tokenizer, raw_data, max_prompt_length, seq_length, pad_token_i
         pretrain_ids = np.array(response_dict["input_ids"])
         loss_mask = np.array(response_dict["attention_mask"])
         prompt_ids = np.pad(prompt_ids, (0, max_prompt_length -
-                            prompt_ids.shape[-1]), 'constant', constant_values=(0, pad_token_id))
+                                         prompt_ids.shape[-1]), 'constant', constant_values=(0, pad_token_id))
         pretrain_ids = np.pad(pretrain_ids, (0, seq_length -
-                              pretrain_ids.shape[-1]), 'constant', constant_values=(0, pad_token_id))
-        loss_mask = np.pad(loss_mask, (0, seq_length-loss_mask.shape[-1]),
+                                             pretrain_ids.shape[-1]), 'constant', constant_values=(0, pad_token_id))
+        loss_mask = np.pad(loss_mask, (0, seq_length - loss_mask.shape[-1]),
                            'constant', constant_values=(0, pad_token_id))
         loss_mask[:prompt_len] = 0.0
 
@@ -54,6 +55,7 @@ def process_data(tokenizer, raw_data, max_prompt_length, seq_length, pad_token_i
         sample["loss_mask"] = loss_mask
 
         yield sample
+
 
 def write_mindrecord(args):
     raw_data = load_json_file(args.file_path)
@@ -64,14 +66,13 @@ def write_mindrecord(args):
     pad_token_id = int(args.pad_token_id)
 
     schema = {
-        "prompt_ids": {"type": "int32", "shape": [-1]},
-        "pretrain_ids": {"type": "int32", "shape": [-1]},
-        "loss_mask": {"type": "float32", "shape": [-1]},
+        "prompt_ids": {"type": "int64", "shape": [-1]},
+        "pretrain_ids": {"type": "int64", "shape": [-1]},
+        "loss_mask": {"type": "int64", "shape": [-1]},
     }
 
     writer = FileWriter(file_name=args.output_path, shard_num=1, overwrite=True)
     writer.add_schema(schema)
-    writer.open_and_set_header()
 
     count = 0
     for sample in process_data(tokenizer, raw_data, max_prompt_length, seq_length, pad_token_id):
@@ -82,11 +83,11 @@ def write_mindrecord(args):
     writer.commit()
     print("Transformation finished! Output file refer: {}".format(args.output_path))
 
+
 def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         '--tokenizer_name_or_path',
-        default="bloom_560m",
         required=True,
         help='model name or path for AutoTokenizer.')
     parser.add_argument(
@@ -112,6 +113,7 @@ def get_args():
         help='pad token id.')
     args_opt = parser.parse_args()
     return args_opt
+
 
 if __name__ == "__main__":
     args = get_args()
