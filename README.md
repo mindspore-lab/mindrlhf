@@ -45,10 +45,10 @@ Current version `0.3.0` can be used directly.
 
 There are some requirements for MindRLHF:
 
-|  requirements   | version |
-|  ----   |---------|
-| MindSpore    | r2.3    |
-| Mindformers | r1.2    |
+|  requirements   | version|
+|  ----   | ----        |
+| MindSpore    | r2.2   |
+| Mindformers | r1.0    |
 
 ## Supported Models
 
