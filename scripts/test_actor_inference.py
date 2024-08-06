@@ -40,16 +40,13 @@ from mindspore.dataset import MnistDataset
 # Download data from open datasets
 # from download import download
 from mindspore import context
-from mindspore.ops.operations._inner_ops import Send, Receive
-from utils import set_pipeline_parallel_context, get_model_config, IsLastStage
-from dataset import IteratorStore
+from mindrlhf import set_pipeline_parallel_context
 from mindspore.dataset import GeneratorDataset
 from mindspore import Profiler
 
 from mindformers.tools.register import MindFormerConfig, ActionDict
 from mindformers.core.parallel_config import build_parallel_config
 from mindformers import MindFormerBook, AutoModel, AutoConfig, AutoTokenizer, AutoProcessor
-from mindformers.models import BaseModel, BaseConfig, BaseTokenizer, BaseProcessor
 from mindrlhf import PPOTrainer
 from mindrlhf import PPOConfig, PPO_model
 
