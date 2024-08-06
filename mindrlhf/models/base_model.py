@@ -17,10 +17,10 @@ class BaseModel(nn.Cell):
 
     def select_actor_model(self, model_config):
         self.model_type = None
-        if not model_config.model_name:
+        if not model_config.model_type:
             raise NotImplementedError("model_name in actor/reference model is None")
         for model in self._model_list:
-            if model in model_config.model_name:
+            if model in model_config.model_type:
                 self.model_type = model
         if not self.model_type:
             raise NotImplementedError("only support {}".format(' '.join(self._model_list)))
@@ -51,10 +51,10 @@ class BaseModel(nn.Cell):
 
     def select_critic_model(self, model_config):
         self.model_type = None
-        if not model_config.model_name:
+        if not model_config.model_type:
             raise NotImplementedError("model_name in critic model is None")
         for model in self._model_list:
-            if model in model_config.model_name:
+            if model in model_config.model_type:
                 self.model_type = model
         if not self.model_type:
             raise NotImplementedError("only support {}".format(' '.join(self._model_list)))
@@ -79,10 +79,10 @@ class BaseModel(nn.Cell):
 
     def select_reward_model(self, model_config):
         self.model_type = None
-        if not model_config.model_name:
+        if not model_config.model_type:
             raise NotImplementedError("model_name in reward model is None")
         for model in self._model_list:
-            if model in model_config.model_name:
+            if model in model_config.model_type:
                 self.model_type = model
         if not self.model_type:
             raise NotImplementedError("only support {}".format(' '.join(self._model_list)))
