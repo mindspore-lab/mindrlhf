@@ -40,7 +40,7 @@ def set_weight_decay(params):
 
 def combine_config(ppo_config, model_config):
     config_temp = asdict(ppo_config)
-    for k, v in model_config.items():
+    for k, v in vars(model_config).items():
         if k not in config_temp:
             config_temp[k] = v
     config_temp['max_prompt_length'] = config_temp['seq_length'] - config_temp['max_decode_length']
