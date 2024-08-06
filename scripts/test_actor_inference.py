@@ -130,9 +130,7 @@ print("[REF Configure] is: ", ref_model_config, ref_model_config.parallel_config
 print("[CRT Configure] is: ", critic_model_config, critic_model_config.parallel_config, flush=True)
 print("[RM Configure] is: ", rm_model_config, rm_model_config.parallel_config, flush=True)
 
-set_pipeline_parallel_context(parallel_mode=opt.parallel_mode, full_batch=opt.full_batch,
-    optimizer_shard=sft_model_config.parallel_config.optimizer_shard, 
-    stage_num=sft_model_config.parallel_config.pipeline_stage, enable_alltoall=opt.enable_alltoall)
+set_pipeline_parallel_context(opt)
 print("parallel model: ", opt.parallel_mode)
 
 ppo_config.seq_length = sft_model_config.seq_length
