@@ -19,17 +19,15 @@ import os
 import sys
 import mindspore
 from mindspore import context
-from mindformers.core.context import build_context, init_context
+from mindformers.core.context import build_context, build_profile_cb, init_context
 from mindformers.trainer import Trainer
 from mindformers.trainer.config_args import ContextConfig, ParallelContextConfig
 from mindformers.tools.register.config import MindFormerConfig
 from mindformers.tools.utils import str2bool
 from mindformers.mindformer_book import MindFormerBook
-
 sys.path.append(os.path.abspath('../../../'))
 from mindrlhf.models.llama.llama_reward import LlamaRewardModel
 from mindrlhf.models.baichuan2 import Baichuan7BReward
-
 
 def run(config='run_llama_2_7b_rm.yaml',
         train_dataset='',
