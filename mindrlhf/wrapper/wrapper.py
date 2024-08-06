@@ -118,7 +118,7 @@ class TrainOneStepWithLossScaleCell(TrainOneStepWithLossScaleCell):
         self.global_step = self.optimizer.global_step
         self.default_lr = Tensor([0.0], dtype=mstype.float32)
         self.enable_global_norm = enable_global_norm
-        self.enable_offload = config.enable_offload
+        self.enable_offload = config.parallel.enable_offload
         self.clip_value = Tensor([1.0], dtype=mstype.float32)
         if config.enable_offload:
             self.clip = GlobalNorm(self.weights, config)
