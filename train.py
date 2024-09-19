@@ -18,7 +18,6 @@
 
 import argparse
 from mindspore import context
-import mindspore.communication.management as D
 from mindrlhf.trainer.ppo_trainer import PPOTrainer
 from mindrlhf.utils.configs import init_configs, init_network_and_optimizer, init_ppo_dataset
 from mindrlhf.utils.utils import set_pipeline_parallel_context

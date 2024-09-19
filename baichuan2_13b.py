@@ -44,7 +44,7 @@ from mindformers.models.llama.llama_config import LlamaConfig
 from mindformers.models.llama.llama_layer import LlamaEmbedding, LlamaFeedForward, LlamaRMSNorm
 from mindformers.tools.logger import logger
 
-__all__ = ['Baichuan13BV2ForCausalLM', 'Baichuan13BV2Model', 'Baichuan13BDPO']
+__all__ = ['Baichuan13BV2ForCausalLM', 'Baichuan13BV2Model']
 
 
 class Baichuan2PreTrainedModel(PreTrainedModel):

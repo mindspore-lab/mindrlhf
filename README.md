@@ -47,8 +47,8 @@ There are some requirements for MindRLHF:
 
 |  requirements   | version |
 |  ----   |---------|
-| MindSpore    | r2.3    |
-| Mindformers | r1.2    |
+| MindSpore    | r2.3.1    |
+| Mindformers | r1.2.0    |
 
 ## Supported Models
 
@@ -73,6 +73,16 @@ Table 2： The models and stages supported in MindRLHF
 | RLHF        | Y              | Y       | Y            |
 
 In the future, we will integrate more models such as LLAMA, GLM, BLOOM, etc.
+
+Now we support `DPO`, and models supported are shown in the following table:
+
+Table 3： The models for DPO
+|  Type     |  Baichuan2   |
+|  ----       |  ----        |
+| offline     | Y            |
+| online      |             |
+
+In the future, we will integrate more models such as LLAMA, GLM, Qwen, etc.
 
 ## Get Started
 
