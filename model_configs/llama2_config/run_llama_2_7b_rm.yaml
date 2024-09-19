@@ -5,7 +5,6 @@ auto_trans_ckpt: False  # If true, auto transform load_checkpoint to load in dis
 src_strategy_path_or_dir: ""
 only_save_strategy: False
 resume_training: False
-use_parallel: True
 run_mode: 'train'
 
 trainer:
@@ -73,7 +72,8 @@ eval_dataset: &eval_dataset
 eval_dataset_task:
   type: RewardModelDataset
   dataset_config: *eval_dataset
-
+  
+use_parallel: True
 # default parallel of device num = 8 910A
 parallel_config:
   data_parallel: 1
@@ -81,7 +81,7 @@ parallel_config:
   pipeline_stage: 1
   optimizer_shard: True
   micro_batch_num: 1
-  vocab_emb_dp: True
+  vocab_emb_dp: False
   gradient_aggregation_group: 4
 # when model parallel is greater than 1, we can set micro_batch_interleave_num=2, that may accelerate the train process.
 micro_batch_interleave_num: 1
