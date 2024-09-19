@@ -69,6 +69,16 @@ MindRLHF架构图如下：
 
 未来，我们将打通更多的模型，如`LLAMA`、`GLM`、`BLOOM`等，敬请期待。
 
+现在我们支持了 `DPO`算法, 对应的基础模型如下表所示:
+
+Table 3： 支持DPO的模型
+|  类型     |  Baichuan2   |
+|  ----       |  ----        |
+| offline     | Y            |
+| online      |             |
+
+未来我们将支持 LLAMA、GLM、Qwen等模型。
+
 ## 快速入门
 
 * 奖励模型训练: 在`examples`文件夹中展示了如何结合`GPT2`进行奖励模型微调的过程。
