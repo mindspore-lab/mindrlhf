@@ -1,7 +1,7 @@
 # preprocess for offline DPO
 export GLOG_v=2
 
-bash ./scripts/msrun_launcher.sh \
+bash /path/msrun_launcher.sh \
 "dpo_preprocess_baichuan_parallel.py \
 --src /path/mindrlhf/datasets/cvalues/source/one.jsonl \
 --dst /path/mindrlhf/data/cvalues/temp/cvalues_one_4096.mindrecord \
