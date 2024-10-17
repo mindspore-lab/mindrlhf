@@ -8,8 +8,7 @@ from mindspore.mindrecord import FileWriter
 
 import mindspore as ms
 from mindformers import AutoModel
-import baichuan2_13b
-from baichuan2_tokenizer import Baichuan2Tokenizer
+from mindrlhf.models.baichuan2.baichuan2_tokenizer import Baichuan2Tokenizer
 
 from mindformers.models.build_tokenizer import build_tokenizer
 from mindformers.core.parallel_config import build_parallel_config
