@@ -1,4 +1,4 @@
-# Copyright 2023 Huawei Technologies Co., Ltd
+# Copyright 2024 Huawei Technologies Co., Ltd
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -37,43 +37,16 @@ def get_input_data_batch_slice_map(chosen_input_ids, chosen_labels,
     Generate position_id and attention_mask according to input_ids considering eod reset
     """
     rank = int(rank_id)
-    # print("rank:", rank)
-    # print("chosen_input_ids before", chosen_input_ids.shape)
     chosen_input_ids = chosen_input_ids[rank*dis: (rank + 1)*dis]
-    # print("chosen_input_ids after", chosen_input_ids.shape)
     rejected_input_ids = rejected_input_ids[rank*dis: (rank + 1)*dis]
     chosen_labels = chosen_labels[rank*dis: (rank + 1)*dis]
     rejected_labels = rejected_labels[rank*dis: (rank + 1)*dis]
-    chosen_attention_mask = chosen_attention_mask[rank*dis: (rank + 1)*dis]
-    rejected_attention_mask = rejected_attention_mask[rank*dis: (rank + 1)*dis]
     chosen_loss_mask = chosen_loss_mask[rank*dis: (rank + 1)*dis]
     rejected_loss_mask = rejected_loss_mask[rank*dis: (rank + 1)*dis]
     chosen_ref_logps = chosen_ref_logps[rank*dis: (rank + 1)*dis]
     rejected_ref_logps = rejected_ref_logps[rank*dis: (rank + 1)*dis]
-    # # Full batch for pipeline parallel
-    # bs = chosen_input_ids.shape[0]
-    # input_ids = []
-    # labels = []
-    # attention_mask = []
-    # loss_mask = []
-    # size_per_stage = bs // micro_batch  # TODO: micro_stage should change name to micro_batch
-    # for stage in range(micro_batch):
-    #     input_ids.append(chosen_input_ids[stage * size_per_stage: (stage + 1) * size_per_stage])
-    #     input_ids.append(rejected_input_ids[stage * size_per_stage: (stage + 1) * size_per_stage])
-    #     labels.append(chosen_labels[stage * size_per_stage: (stage + 1) * size_per_stage])
-    #     labels.append(rejected_labels[stage * size_per_stage: (stage + 1) * size_per_stage])
-    #     attention_mask.append(chosen_attention_mask[stage * size_per_stage: (stage + 1) * size_per_stage])
-    #     attention_mask.append(rejected_attention_mask[stage * size_per_stage: (stage + 1) * size_per_stage])
-    #     loss_mask.append(chosen_loss_mask[stage * size_per_stage: (stage + 1) * size_per_stage])
-    #     loss_mask.append(rejected_loss_mask[stage * size_per_stage: (stage + 1) * size_per_stage])
-
-    # input_ids = np.concatenate(input_ids)
-    # labels = np.concatenate(labels)
-    # attention_mask = np.concatenate(attention_mask)
-    # loss_mask = np.concatenate(loss_mask)
-
     return chosen_input_ids, chosen_labels, chosen_loss_mask, chosen_ref_logps, \
-           rejected_input_ids, rejected_labels, rejected_attention_mask, rejected_ref_logps
+           rejected_input_ids, rejected_labels, rejected_loss_mask, rejected_ref_logps
 
 @MindFormerRegister.register(MindFormerModuleType.DATASET)
 class DPODataset(BaseDataset):
@@ -201,21 +174,11 @@ class DPODataset(BaseDataset):
                 raise ValueError(
                     f"batch size {dataset_config.batch_size} should be a multiple of device number {device_num}."
                     " You should change the args: per_batch_size.")
-        # count = 0
-        # for data in dataset.create_dict_iterator():
-        #     count += 1
-        #     print("data:", data)
-        #     if count == 3:
-        #         break
         
         dataset = dataset.batch(dataset_config.batch_size,
                                 drop_remainder=dataset_config.drop_remainder,
                                 output_columns=dataset_config.input_columns)
-        # map_func = lambda input_ids: get_input_data_batch_slice_map(input_ids,
-        #                                                             eod_token_id=dataset_config.eod_token_id,
-        #                                                             rank_id=rank_id,
-        #                                                             dis=dis)
-        # micro_batch = dataset_config.micro_batch
+
         micro_batch = 1
         map_func = (lambda chosen_input_ids, chosen_labels, \
                     chosen_attention_mask, chosen_loss_mask, chosen_ref_logps, \
