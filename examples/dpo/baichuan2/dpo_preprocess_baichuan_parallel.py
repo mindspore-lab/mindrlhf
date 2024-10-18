@@ -5,11 +5,9 @@ import numpy as np
 from tqdm import tqdm
 import json
 from mindspore.mindrecord import FileWriter
-
 import mindspore as ms
 from mindformers import AutoModel
 from mindrlhf.models.baichuan2.baichuan2_tokenizer import Baichuan2Tokenizer
-
 from mindformers.models.build_tokenizer import build_tokenizer
 from mindformers.core.parallel_config import build_parallel_config
 from mindformers.tools import logger
@@ -45,9 +43,9 @@ def build_message(tokenizer, messages, metadata=""):
 
 
 def build_message_cvalues(tokenizer, prompt, ans, metadata=""):
-    msg = f"<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n"
+    msg = f"<|user|>\n{prompt}"
     prompt_ids = tokenizer.encode(msg)
-    msg = f"{ans}<|im_end|>"
+    msg = f"<|assistant|>\n{ans}"
     answer_ids = tokenizer.encode(msg)
     return prompt_ids, answer_ids
 
@@ -64,6 +62,7 @@ def get_logps(model, input_ids, labels, attention_mask, loss_mask):
         """
     valid_length = np.array(attention_mask).sum(axis=-1)
     batch_length = int(max(valid_length))
+    print("=========batch_length is ", batch_length)
     input_ids = ms.Tensor(input_ids, dtype=ms.int32)
     if len(input_ids.shape) == 1:
         input_ids = ms.ops.unsqueeze(input_ids, 0)
@@ -72,19 +71,26 @@ def get_logps(model, input_ids, labels, attention_mask, loss_mask):
     labels = ms.Tensor(labels, dtype=ms.int32)
     if len(labels.shape) == 1:
         labels = ms.ops.unsqueeze(labels, 0)
-    labels = P.StridedSlice()(labels, (0, 0), (labels.shape[0], min(batch_length, labels.shape[1] - 1)), (1, 1))
+    labels = P.StridedSlice()(labels, (0, 1), (labels.shape[0], min(batch_length, labels.shape[1])), (1, 1))
+    # attention_mask = ms.Tensor(attention_mask, dtype=ms.int32)
+    # if len(attention_mask.shape) == 1:
+    #     attention_mask = ms.ops.unsqueeze(attention_mask, 0)
     loss_mask = ms.Tensor(loss_mask, dtype=ms.int32)
     if len(loss_mask.shape) == 1:
         loss_mask = ms.ops.unsqueeze(loss_mask, 0)
-    loss_mask = P.StridedSlice()(loss_mask, (0, 0), (loss_mask.shape[0], min(batch_length, loss_mask.shape[1] - 1)),
-                                 (1, 1))
+    loss_mask = P.StridedSlice()(loss_mask, (0, 1), (loss_mask.shape[0], min(batch_length, loss_mask.shape[1])), (1, 1))
+    # print("===============input_ids", input_ids.shape)
     outputs = model(input_ids)
     logits = outputs[0]
+    # valid_length_each_example = ms.Tensor(valid_length)
+    # logits, _ = model.forward(input_ids_ori, valid_length, batch_valid_length=valid_length.reshape(-1, 1))
     # [bs, seq_len] -> [bs, seq_len]
     labels = labels * loss_mask
     logits = logits.to(ms.float32)
     # [bs, seq_len, vocab_size]
+    print("logits", logits, flush=True)
     log_probs = ms.ops.log_softmax(logits, -1)
+    print("log_probs", log_probs, flush=True)
     # [bs, seq_len] -> [bs, seq_len, 1]
     index = ms.ops.unsqueeze(labels, -1)
     index = index.to(ms.int32)
@@ -92,16 +98,21 @@ def get_logps(model, input_ids, labels, attention_mask, loss_mask):
     per_token_logps = ms.ops.gather_elements(log_probs, -1, index)
     # [bs, seq_len, 1] -> [bs, seq_len]
     per_token_logps = ms.ops.squeeze(per_token_logps, -1)
+    print("per_token_logps", per_token_logps, flush=True)
     logps = ms.ops.sum(per_token_logps * loss_mask, -1)
+    print("logps", per_token_logps, flush=True)
     return logps.asnumpy()
 
 
 def preprocess(data_path: str, dst_file: str, config_path: str,
                tokenizer_path: str, seq_len: int, dataset_type: str = 'dpo'):
+    # D.init()
+    config_path = config_path
     config = MindFormerConfig(config_path)
+    # config.context.device_id = device_id
     logger.info("..........Build Context Config..........")
-    print('config', config)
     build_context(config)
+    # ms.set_context(mode=ms.GRAPH_MODE, device_target="Ascend", device_id=device_id)
     logger.info("..........Build Parallel Config..........")
     build_parallel_config(config)
     logger.info("parallel config is: %s", config.parallel_config)
@@ -109,6 +120,8 @@ def preprocess(data_path: str, dst_file: str, config_path: str,
     tokenizer = Baichuan2Tokenizer(vocab_file=tokenizer_path)
     model = AutoModel.from_config(config)
     model.set_train(False)
+    for names, params in model.parameters_and_names():
+        print(names, params[:10], flush=True)
     dynamic_input_ids = ms.Tensor(shape=[None, None], dtype=ms.int32)
     model.set_inputs(dynamic_input_ids)
     if dataset_type == 'dpo':
@@ -138,6 +151,8 @@ def preprocess(data_path: str, dst_file: str, config_path: str,
         writer = FileWriter(file_name=dst_file, shard_num=1, overwrite=True)
         writer.add_schema(schema)
 
+    import math
+    nums = 0
     batch_chosen_input_ids = []
     batch_chosen_labels = []
     batch_chosen_attention_mask = []
@@ -161,12 +176,12 @@ def preprocess(data_path: str, dst_file: str, config_path: str,
         def _build(prompt_ids, resp_ids):
             # check input_ids > seq_length
             input_ids = prompt_ids + resp_ids
-            labels = input_ids[1:] + [tokenizer.pad_token_id]
+            labels = input_ids[:]
             attention_mask = [1] * len(input_ids)
             loss_mask = [0] * len(prompt_ids) + [1] * len(resp_ids)
             input_len = len(input_ids)
-            input_ids = input_ids + [0] * (seq_len - input_len)
-            labels = labels + [0] * (seq_len - input_len)
+            input_ids = input_ids + [tokenizer.pad_token_id] * (seq_len - input_len)
+            labels = labels + [tokenizer.pad_token_id] * (seq_len - input_len)
             attention_mask = attention_mask + [0] * (seq_len - input_len)
             loss_mask = loss_mask + [0] * (seq_len - input_len)
 
@@ -186,11 +201,24 @@ def preprocess(data_path: str, dst_file: str, config_path: str,
             _build(prompt_ids, chosen_ids)
         rejected_input_ids, rejected_labels, rejected_attention_mask, rejected_loss_mask = \
             _build(prompt_ids, rejected_ids)
+        batch_chosen_input_ids.append(chosen_input_ids)
+        batch_chosen_labels.append(chosen_labels)
+        batch_chosen_attention_mask.append(chosen_attention_mask)
+        batch_chosen_loss_mask.append(chosen_loss_mask)
+        batch_rejected_input_ids.append(rejected_input_ids)
+        batch_rejected_labels.append(rejected_labels)
+        batch_rejected_attention_mask.append(rejected_attention_mask)
+        batch_rejected_loss_mask.append(rejected_loss_mask)
+        nums += 1
         if len(batch_chosen_input_ids) == config.model.model_config.batch_size:
+            print("config.model.model_config.batch_size", config.model.model_config.batch_size,
+                  len(batch_chosen_input_ids))
             batch_chosen_ref_logps = get_logps(model, batch_chosen_input_ids, batch_chosen_labels,
                                                batch_chosen_attention_mask, batch_chosen_loss_mask)
             batch_rejected_ref_logps = get_logps(model, batch_rejected_input_ids, batch_rejected_labels,
                                                  batch_rejected_attention_mask, batch_rejected_loss_mask)
+            # print(f"========batch_chosen_ref_logps{batch_chosen_ref_logps}")
+            # print(f"========batch_rejected_ref_logps{batch_rejected_ref_logps}")
             for i in range(config.model.model_config.batch_size):
                 sample = {
                     "chosen_input_ids": batch_chosen_input_ids[i],
@@ -204,9 +232,9 @@ def preprocess(data_path: str, dst_file: str, config_path: str,
                     "rejected_loss_mask": batch_rejected_loss_mask[i],
                     "rejected_ref_logps": np.array([batch_rejected_ref_logps[i]]),
                 }
-
                 if rank_id == 0:
                     writer.write_raw_data([sample])
+            nums = 0
             batch_chosen_input_ids = []
             batch_chosen_labels = []
             batch_chosen_attention_mask = []
@@ -216,39 +244,19 @@ def preprocess(data_path: str, dst_file: str, config_path: str,
             batch_rejected_attention_mask = []
             batch_rejected_loss_mask = []
 
-        batch_chosen_input_ids.append(chosen_input_ids)
-        batch_chosen_labels.append(chosen_labels)
-        batch_chosen_attention_mask.append(chosen_attention_mask)
-        batch_chosen_loss_mask.append(chosen_loss_mask)
-        batch_rejected_input_ids.append(rejected_input_ids)
-        batch_rejected_labels.append(rejected_labels)
-        batch_rejected_attention_mask.append(rejected_attention_mask)
-        batch_rejected_loss_mask.append(rejected_loss_mask)
-
-    # last batch
-    if len(batch_chosen_input_ids) == config.model.model_config.batch_size:
-        batch_chosen_ref_logps = get_logps(model, batch_chosen_input_ids, batch_chosen_labels,
-                                           batch_chosen_attention_mask, batch_chosen_loss_mask)
-        batch_rejected_ref_logps = get_logps(model, batch_rejected_input_ids, batch_rejected_labels,
-                                             batch_rejected_attention_mask, batch_rejected_loss_mask)
-        for i in range(config.model.model_config.batch_size):
-            sample = {
-                "chosen_input_ids": batch_chosen_input_ids[i],
-                "chosen_labels": batch_chosen_labels[i],
-                "chosen_attention_mask": batch_chosen_attention_mask[i],
-                "chosen_loss_mask": batch_chosen_loss_mask[i],
-                "chosen_ref_logps": np.array([batch_chosen_ref_logps[i]]),
-                "rejected_input_ids": batch_rejected_input_ids[i],
-                "rejected_labels": batch_rejected_labels[i],
-                "rejected_attention_mask": batch_rejected_attention_mask[i],
-                "rejected_loss_mask": batch_rejected_loss_mask[i],
-                "rejected_ref_logps": np.array([batch_rejected_ref_logps[i]]),
-            }
-
-            if rank_id == 0:
-                writer.write_raw_data([sample])
+        else:
+            batch_chosen_input_ids.append(chosen_input_ids)
+            batch_chosen_labels.append(chosen_labels)
+            batch_chosen_attention_mask.append(chosen_attention_mask)
+            batch_chosen_loss_mask.append(chosen_loss_mask)
+            batch_rejected_input_ids.append(rejected_input_ids)
+            batch_rejected_labels.append(rejected_labels)
+            batch_rejected_attention_mask.append(rejected_attention_mask)
+            batch_rejected_loss_mask.append(rejected_loss_mask)
+            nums += 1
     if rank_id == 0:
         writer.commit()
+
 
 def main():
     parser = argparse.ArgumentParser()
