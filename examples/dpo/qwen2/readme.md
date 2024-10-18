@@ -1,14 +1,14 @@
 ## DPO训练
 
-相关教程可参考 [research/qwen2/qwen2.md · MindSpore/mindformers - 码云 - 开源中国 (gitee.com)](https://gitee.com/mindspore/mindformers/blob/dev/research/qwen2/qwen2.md)
+DPO训练中使用的网络和Mindformers中使用的结构一致。请参考[链接](https://gitee.com/mindspore/mindformers/blob/dev/research/qwen2/qwen2.md)获得更详细的介绍内容。
+
 
 ### 数据准备
-
-[CValues-Comparison 中文大模型价值观比较数据集 · 数据集 (modelscope.cn)](https://www.modelscope.cn/datasets/iic/CValues-Comparison)
+数据集采用的是开源的中文大模型价值观比较数据集CValues-Comparison。
 
 ### 模型准备
 
-hugging face下载，[Qwen/Qwen2-7B at main (huggingface.co)](https://huggingface.co/Qwen/Qwen2-7B/tree/main)，模型权重，vocab.json，merged.txt，config.json文件。
+参考Mindformers中的网络权重和相关配置文件的下载方式，请参考[链接](https://gitee.com/mindspore/mindformers/blob/dev/research/qwen2/qwen2.md)，下载模型权重，vocab.json，merged.txt，config.json文件。
 
 运行如下命令将pt权重转换到ms权重，convert_weight.py在[MindFormers-Qwen2](https://gitee.com/mindspore/mindformers/tree/dev/research/qwen2)中。
 
@@ -21,7 +21,6 @@ input_path:  下载HuggingFace权重的文件夹路径
 output_path: 转换后的MindSpore权重文件保存路径
 dtype:       转换权重的精度
 ```
-
 
 
 ### 版本依赖
@@ -69,6 +68,7 @@ bash ../../../scripts/msrun_launcher.sh \
 ```
 
 3. 推理
+
    训练完成后，会存储下切片后的权重，如单机8卡的权重，但是在实际应用中，可能只需要单机单卡，就可以进行推理功能。考虑到性能的优势，一般推荐单机单卡进行推理，MindRLHF提供了权重转换的脚本(transform_checkpoint.py)，参考示例如下：
 ```sh
 python transform_checkpoint.py \
@@ -76,6 +76,7 @@ python transform_checkpoint.py \
    --src_strategy=/path/output/strategy \
    --dst_checkpoint=/path/mindrlhf/examples/dpo/baichuan2
 ```
+
    完成权重转化后，执行如下命令进行单卡推理：
 ```sh
 # 1. 修改yaml配置，vocab，merge.txt路径
