@@ -57,11 +57,11 @@ Current version of MindRLHF: `0.3.0`
 The current version integrates Pangu-alpha(13B), GPT2, Baichuan2(7B/13B) models, and users can explore these two models. In the future, we will provide more models such as LLAMA, BLOOM, GLM, etc. To help users quickly implement their own applications. The specific supported list is shown below:
 
 Table 1： The models and scales supported in MindRLHF
-|  Models   | Pangu-alpha |  GPT2   |  Baichuan2   |
-|  ----     | ----        |  ----   |  ----        |
-| Scales    | 2.6B/13B    | 124M    | 7B/13B       |
-| Parallel  | Y           | Y       | Y            |
-| Device    | NPU         | NPU     | NPU          |
+|  Models   | Pangu-alpha |  GPT2   |  Baichuan2   | Baichuan2 |
+|  ----     | ----        |  ----   |  ----        |  ----     |
+| Scales    | 2.6B/13B    | 124M    | 7B/13B       |  7B       |
+| Parallel  | Y           | Y       | Y            |   Y       |
+| Device    | NPU         | NPU     | NPU          |   NPU     | 
 
 The support of models for different training stages is shown in the following table:
 
@@ -77,10 +77,10 @@ In the future, we will integrate more models such as LLAMA, GLM, BLOOM, etc.
 Now we support `DPO`, and models supported are shown in the following table:
 
 Table 3： The models for DPO
-|  Type     |  Baichuan2   |
-|  ----       |  ----        |
-| offline     | Y            |
-| online      |             |
+|  Type     |  Baichuan2   |  Qwen2       |
+|  ----     |  ----        |  ----        |
+| offline   | Y            | Y            |
+| online    |              |              |
 
 In the future, we will integrate more models such as LLAMA, GLM, Qwen, etc.
 
