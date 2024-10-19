@@ -52,11 +52,11 @@ MindRLHF架构图如下：
 当前版本集成了Pangu-alpha(13B)、GPT2、Baichuan2(7B/13B) 模型，用户可以基于这两个模型进行探索。未来，我们将提供更多模型如LLAMA、BLOOM、GLM等，帮助用户快速实现自己的应用。具体支持列表如下所示：
 
 表 1： 当前MindSpore RLHF支持的模型和规模
-|  模型   | Pangu-alpha |  GPT2   | Baichuan2 |
-|  ----   | ----        |  ----   |  ----   |
-| 规模    | 2.6B/13B    | 124M    | 7B/13B    |
-| 支持并行 | Y          | Y       | Y       |
-| 硬件    | NPU         | NPU     | NPU     |
+|  模型   | Pangu-alpha |  GPT2   | Baichuan2 | Qwen2 | 
+|  ----   | ----        |  ----   |  ----   |  ----   |
+| 规模    | 2.6B/13B    | 124M    | 7B/13B    | 7B    |
+| 支持并行 | Y          | Y       | Y       | Y       |
+| 硬件    | NPU         | NPU     | NPU     | NPU     |
 
 当前流程下，不同模型对不同训练阶段的支持情况如下表所示：
 
@@ -72,12 +72,12 @@ MindRLHF架构图如下：
 现在我们支持了 `DPO`算法, 对应的基础模型如下表所示:
 
 Table 3： 支持DPO的模型
-|  类型     |  Baichuan2   |
-|  ----       |  ----        |
-| offline     | Y            |
-| online      |             |
+|  类型     |  Baichuan2   |  Qwen2   |
+|  ----       |  ----        |  ----        |
+| offline     | Y            | Y            |
+| online      |             |             |
 
-未来我们将支持 LLAMA、GLM、Qwen等模型。
+未来我们将支持 LLAMA、GLM等模型。
 
 ## 快速入门
 

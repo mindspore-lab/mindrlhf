@@ -33,7 +33,7 @@ def build_message(tokenizer, messages, metadata=""):
         message = f"{role}{metadata}\n{msg['value']}"
         tokens = tokenizer.encode(message)
         if i != 0:
-            tokens = tokens[2:]  # remove prefix
+            tokens = tokens[2:]
         encoded_messages.append(tokens)
     prompt_ids = []
     for encoded_ids in encoded_messages[:-1]:
@@ -72,18 +72,12 @@ def get_logps(model, input_ids, labels, attention_mask, loss_mask):
     if len(labels.shape) == 1:
         labels = ms.ops.unsqueeze(labels, 0)
     labels = P.StridedSlice()(labels, (0, 1), (labels.shape[0], min(batch_length, labels.shape[1])), (1, 1))
-    # attention_mask = ms.Tensor(attention_mask, dtype=ms.int32)
-    # if len(attention_mask.shape) == 1:
-    #     attention_mask = ms.ops.unsqueeze(attention_mask, 0)
     loss_mask = ms.Tensor(loss_mask, dtype=ms.int32)
     if len(loss_mask.shape) == 1:
         loss_mask = ms.ops.unsqueeze(loss_mask, 0)
     loss_mask = P.StridedSlice()(loss_mask, (0, 1), (loss_mask.shape[0], min(batch_length, loss_mask.shape[1])), (1, 1))
-    # print("===============input_ids", input_ids.shape)
     outputs = model(input_ids)
     logits = outputs[0]
-    # valid_length_each_example = ms.Tensor(valid_length)
-    # logits, _ = model.forward(input_ids_ori, valid_length, batch_valid_length=valid_length.reshape(-1, 1))
     # [bs, seq_len] -> [bs, seq_len]
     labels = labels * loss_mask
     logits = logits.to(ms.float32)
@@ -106,13 +100,10 @@ def get_logps(model, input_ids, labels, attention_mask, loss_mask):
 
 def preprocess(data_path: str, dst_file: str, config_path: str,
                tokenizer_path: str, seq_len: int, dataset_type: str = 'dpo'):
-    # D.init()
     config_path = config_path
     config = MindFormerConfig(config_path)
-    # config.context.device_id = device_id
     logger.info("..........Build Context Config..........")
     build_context(config)
-    # ms.set_context(mode=ms.GRAPH_MODE, device_target="Ascend", device_id=device_id)
     logger.info("..........Build Parallel Config..........")
     build_parallel_config(config)
     logger.info("parallel config is: %s", config.parallel_config)
@@ -217,8 +208,6 @@ def preprocess(data_path: str, dst_file: str, config_path: str,
                                                batch_chosen_attention_mask, batch_chosen_loss_mask)
             batch_rejected_ref_logps = get_logps(model, batch_rejected_input_ids, batch_rejected_labels,
                                                  batch_rejected_attention_mask, batch_rejected_loss_mask)
-            # print(f"========batch_chosen_ref_logps{batch_chosen_ref_logps}")
-            # print(f"========batch_rejected_ref_logps{batch_rejected_ref_logps}")
             for i in range(config.model.model_config.batch_size):
                 sample = {
                     "chosen_input_ids": batch_chosen_input_ids[i],

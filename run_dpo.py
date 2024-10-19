@@ -1,4 +1,4 @@
-# Copyright 2023 Huawei Technologies Co., Ltd
+# Copyright 2024 Huawei Technologies Co., Ltd
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -30,8 +30,8 @@ from mindformers.tools import get_output_root_path
 # import baichuan2_7b
 from mindrlhf.models.baichuan2.baichuan2_13b import Baichuan13BDPO
 from mindrlhf.models.baichuan2.baichuan2_tokenizer import Baichuan2Tokenizer
+from mindrlhf.models.qwen2.qwen_dpo import Qwen7BDPO
 from mindrlhf import DPODataset
-
 
 def clear_auto_trans_output(config):
     """clear transformed_checkpoint and strategy"""
@@ -87,6 +87,7 @@ def main(task='text_generation',
 
     # init config
     config = MindFormerConfig(os.path.realpath(config))
+    run_mode = config.run_mode
     if seq_length is not None:
         config.model.model_config.seq_length = seq_length
     if mode is not None:
