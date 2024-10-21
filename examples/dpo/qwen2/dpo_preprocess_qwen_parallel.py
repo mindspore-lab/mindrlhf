@@ -228,6 +228,8 @@ def preprocess(data_path: str, dst_file: str, config_path: str,
             batch_rejected_labels = [] 
             batch_rejected_attention_mask = []
             batch_rejected_loss_mask = []
+    if rank_id == 0:
+        writer.commit()
 
 
 def main():
