@@ -26,9 +26,6 @@ bash ./scripts/msrun_launcher.sh \
 
 ## 步骤2: DPO训练
 
-### 脚本参数介绍
-训练Baichuan2_13b，框架提供了目录下的`train_dpo.sh`脚本，用户可以通过执行该脚本来完成训练。
-
 ### 脚本执行方法
 以8卡为例，执行以下命令即可开始训练：
 ```Shell
