@@ -2,10 +2,10 @@ seed: 0
 output_dir: './output' # path to save checkpoint/strategy
 load_checkpoint: '/path/to/Qwen2-7B.ckpt'
 src_strategy_path_or_dir: ''
-auto_trans_ckpt: False  # If true, auto transform load_checkpoint to load in distributed model
+auto_trans_ckpt: True  # If true, auto transform load_checkpoint to load in distributed model
 only_save_strategy: False
 resume_training: False
-use_parallel: False
+use_parallel: True
 run_mode: 'predict'
 
 # trainer config
