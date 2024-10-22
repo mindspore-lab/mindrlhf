@@ -43,7 +43,6 @@ bash ../../../scripts/msrun_launcher.sh \
 --src /path/to/input.jsonl \
 --dst /path/to/output.mindrecord \
 --config /path/to/mindrlhf/model_configs/qwen_config/process_qwen2_7b.yaml \
---auto_trans_ckpt True \
 --tokenizer /path/to/vocab.json \
 --merges_file /path/to/merges.txt \
 --seq_len 4097 \
@@ -69,7 +68,7 @@ bash ../../../scripts/msrun_launcher.sh \
 
 3. 推理
 
-   训练完成后，会存储下切片后的权重，如单机8卡的权重，但是在实际应用中，可能只需要单机单卡，就可以进行推理功能。考虑到性能的优势，一般推荐单机单卡进行推理，MindRLHF提供了权重转换的脚本(transform_checkpoint.py)，参考示例如下：
+训练完成后，会存储下切片后的权重，如单机8卡的权重，但是在实际应用中，可能只需要单机单卡，就可以进行推理功能。考虑到性能的优势，一般推荐单机单卡进行推理，MindRLHF提供了权重转换的脚本(transform_checkpoint.py)，参考示例如下：
 ```sh
 python transform_checkpoint.py \
    --src_checkpoint=/path/output/checkpoint_network \
