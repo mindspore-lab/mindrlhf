@@ -28,25 +28,30 @@ from mindformers.dataset.base_dataset import BaseDataset
 
 __all__ = ['DPODataset']
 
+
 def get_input_data_batch_slice_map(chosen_input_ids, chosen_labels,
-                                      chosen_attention_mask, chosen_loss_mask, chosen_ref_logps,
-                                      rejected_input_ids, rejected_labels,
-                                      rejected_attention_mask, rejected_loss_mask, rejected_ref_logps,
-                                      dis, rank_id: int = 0):
+                                   chosen_attention_mask, chosen_loss_mask, chosen_ref_logps,
+                                   rejected_input_ids, rejected_labels,
+                                   rejected_attention_mask, rejected_loss_mask, rejected_ref_logps,
+                                   dis, rank_id: int = 0):
     """
     Generate position_id and attention_mask according to input_ids considering eod reset
     """
     rank = int(rank_id)
-    chosen_input_ids = chosen_input_ids[rank*dis: (rank + 1)*dis]
-    rejected_input_ids = rejected_input_ids[rank*dis: (rank + 1)*dis]
-    chosen_labels = chosen_labels[rank*dis: (rank + 1)*dis]
-    rejected_labels = rejected_labels[rank*dis: (rank + 1)*dis]
-    chosen_loss_mask = chosen_loss_mask[rank*dis: (rank + 1)*dis]
-    rejected_loss_mask = rejected_loss_mask[rank*dis: (rank + 1)*dis]
-    chosen_ref_logps = chosen_ref_logps[rank*dis: (rank + 1)*dis]
-    rejected_ref_logps = rejected_ref_logps[rank*dis: (rank + 1)*dis]
+    chosen_input_ids = chosen_input_ids[rank * dis: (rank + 1) * dis]
+    rejected_input_ids = rejected_input_ids[rank * dis: (rank + 1) * dis]
+    chosen_labels = chosen_labels[rank * dis: (rank + 1) * dis]
+    rejected_labels = rejected_labels[rank * dis: (rank + 1) * dis]
+    # chosen_attention_mask = chosen_attention_mask[rank*dis: (rank + 1)*dis]
+    # rejected_attention_mask = rejected_attention_mask[rank*dis: (rank + 1)*dis]
+    chosen_loss_mask = chosen_loss_mask[rank * dis: (rank + 1) * dis]
+    rejected_loss_mask = rejected_loss_mask[rank * dis: (rank + 1) * dis]
+    chosen_ref_logps = chosen_ref_logps[rank * dis: (rank + 1) * dis]
+    rejected_ref_logps = rejected_ref_logps[rank * dis: (rank + 1) * dis]
+
     return chosen_input_ids, chosen_labels, chosen_loss_mask, chosen_ref_logps, \
-           rejected_input_ids, rejected_labels, rejected_loss_mask, rejected_ref_logps
+        rejected_input_ids, rejected_labels, rejected_loss_mask, rejected_ref_logps
+
 
 @MindFormerRegister.register(MindFormerModuleType.DATASET)
 class DPODataset(BaseDataset):
@@ -147,6 +152,7 @@ class DPODataset(BaseDataset):
         logger.info("Now Create Causal Language Model Dataset.")
         dataset_config = cls.check_dataset_config(dataset_config, locals())
         dataset_config = copy.deepcopy(dataset_config)
+        print('dataset_config', dataset_config)
         cls.init_dataset_config(dataset_config)
         rank_id, device_num = cls._generate_shard_info()
         dataset_config.rank_id = rank_id
@@ -162,51 +168,58 @@ class DPODataset(BaseDataset):
             dataset = dataset_config.data_loader
         type_cast_op = TypeCast(mstype.int32)
         float_type_cast_op = TypeCast(mstype.float32)
-        if cls._is_semi_full_batch() or cls._is_data_parallel():
-            rank_id = 0
-            dis = dataset_config.batch_size
-            print("********************dis", dis)
+        if dataset_config.eod_reset:
+            if cls._is_semi_full_batch() or cls._is_data_parallel():
+                rank_id = 0
+                dis = dataset_config.batch_size
+                print("********************dis", dis)
+            else:
+                # Each card slice a small batch from the full batch
+                dis = dataset_config.batch_size // device_num
+                print("=====================dis", dis)
+                if dataset_config.batch_size % device_num != 0:
+                    raise ValueError(
+                        f"batch size {dataset_config.batch_size} should be a multiple of device number {device_num}."
+                        " You should change the args: per_batch_size.")
+
+            dataset = dataset.batch(dataset_config.batch_size,
+                                    drop_remainder=dataset_config.drop_remainder,
+                                    output_columns=dataset_config.input_columns)
+
+            map_func = (lambda chosen_input_ids, chosen_labels, \
+                               chosen_attention_mask, chosen_loss_mask, chosen_ref_logps, \
+                               rejected_input_ids, rejected_labels, \
+                               rejected_attention_mask, rejected_loss_mask, rejected_ref_logps:
+                        get_input_data_batch_slice_map(chosen_input_ids=chosen_input_ids,
+                                                       chosen_labels=chosen_labels,
+                                                       chosen_attention_mask=chosen_attention_mask,
+                                                       chosen_loss_mask=chosen_loss_mask,
+                                                       chosen_ref_logps=chosen_ref_logps,
+                                                       rejected_input_ids=rejected_input_ids,
+                                                       rejected_labels=rejected_labels,
+                                                       rejected_attention_mask=rejected_attention_mask,
+                                                       rejected_loss_mask=rejected_loss_mask,
+                                                       rejected_ref_logps=rejected_ref_logps,
+                                                       rank_id=rank_id,
+                                                       dis=dis))
+            dataset = get_dataset_map(dataset, map_func,
+                                      input_columns=dataset_config.input_columns,
+                                      output_columns=dataset_config.output_columns)
+            dataset = dataset.project(columns=dataset_config.output_columns)
+
+            count = 0
+            for data in dataset.create_dict_iterator():
+                count += 1
+                print("************************data after:", data)
+                if count == 3:
+                    break
         else:
-            # Each card slice a small batch from the full batch
-            dis = dataset_config.batch_size // device_num
-            print("=====================dis", dis)
-            if dataset_config.batch_size % device_num != 0:
-                raise ValueError(
-                    f"batch size {dataset_config.batch_size} should be a multiple of device number {device_num}."
-                    " You should change the args: per_batch_size.")
-        
-        dataset = dataset.batch(dataset_config.batch_size,
-                                drop_remainder=dataset_config.drop_remainder,
-                                output_columns=dataset_config.input_columns)
-
-        micro_batch = 1
-        map_func = (lambda chosen_input_ids, chosen_labels, \
-                    chosen_attention_mask, chosen_loss_mask, chosen_ref_logps, \
-                    rejected_input_ids, rejected_labels, \
-                    rejected_attention_mask, rejected_loss_mask, rejected_ref_logps:
-        get_input_data_batch_slice_map(chosen_input_ids=chosen_input_ids,
-                                            chosen_labels=chosen_labels,
-                                            chosen_attention_mask=chosen_attention_mask,
-                                            chosen_loss_mask=chosen_loss_mask,
-                                            chosen_ref_logps=chosen_ref_logps,
-                                            rejected_input_ids=rejected_input_ids,
-                                            rejected_labels=rejected_labels,
-                                            rejected_attention_mask=rejected_attention_mask,
-                                            rejected_loss_mask=rejected_loss_mask,
-                                            rejected_ref_logps=rejected_ref_logps,
-                                            rank_id=rank_id,
-                                            dis=dis))
-        dataset = get_dataset_map(dataset, map_func,
-                                    input_columns=dataset_config.input_columns,
-                                    output_columns=dataset_config.output_columns)
-        dataset = dataset.project(columns=dataset_config.output_columns)
-
-        count = 0
-        for data in dataset.create_dict_iterator():
-            count += 1
-            print("************************data after:", data)
-            if count == 3:
-                break
+            dataset = dataset.batch(dataset_config.batch_size,
+                                    drop_remainder=dataset_config.drop_remainder,
+                                    output_columns=dataset_config.input_columns,
+                                    num_parallel_workers=dataset_config.num_parallel_workers)
+            dataset = dataset.project(columns=dataset_config.output_columns)
+            print('dataset_config.batch_size:', dataset_config.batch_size)
         for input_arg in ['chosen_input_ids', 'rejected_input_ids', 'chosen_labels', 'rejected_labels']:
             dataset = dataset.map(operations=type_cast_op, input_columns=input_arg)
         for input_arg in ['chosen_ref_logps', 'rejected_ref_logps']:
