@@ -46,8 +46,18 @@ bash ../../../scripts/msrun_launcher.sh \
 --tokenizer /path/to/vocab.json \
 --merges_file /path/to/merges.txt \
 --seq_len 4097 \
---dataset_type cvalues" \
-8 # num of device
+--dataset_type cvalues \
+--save_interval 2" \
+8 
+# 参数说明
+src: 原始数据集文件路径
+dst: 输出数据集文件路径
+config: 配置文件路径
+tokenizer: vocab.json文件路径
+merges_file: merges.txt文件路径
+seq_len: 输出数据的序列长度
+dataset_type: 需要处理的数据类型
+save_interval: 生成数据集数量
 ```
 
 2. 微调

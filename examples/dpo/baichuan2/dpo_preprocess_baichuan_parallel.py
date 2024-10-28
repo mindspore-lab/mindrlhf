@@ -98,8 +98,17 @@ def get_logps(model, input_ids, labels, attention_mask, loss_mask):
     return logps.asnumpy()
 
 
-def preprocess(data_path: str, dst_file: str, config_path: str,
-               tokenizer_path: str, seq_len: int, dataset_type: str = 'dpo'):
+def divide_data_equal_first(data_nums, interval_nums):
+    nums_per_interval, nums_of_data_remaining = divmod(data_nums, interval_nums)
+    if nums_of_data_remaining == 0:
+        return {i: nums_per_interval for i in range(interval_nums)}
+    else:
+        return {i: nums_per_interval if i < interval_nums - 1 else nums_per_interval + nums_of_data_remaining for i in
+                range(interval_nums)}
+
+
+def preprocess(data_path: str, dst_file: str, config_path: str, tokenizer_path: str, seq_len: int, dataset_type: str,
+               save_interval: int):
     config_path = config_path
     config = MindFormerConfig(config_path)
     logger.info("..........Build Context Config..........")
@@ -125,6 +134,8 @@ def preprocess(data_path: str, dst_file: str, config_path: str,
                 pairs.append(json.loads(line))
     else:
         raise ValueError(f"Unsupported dataset type: {dataset_type}")
+    if save_interval > len(pairs) or save_interval <= 0:
+        raise ValueError("Save interval must be greater than 0 and less than the amount of data")
 
     schema = {
         "chosen_input_ids": {"type": "int32", "shape": [-1]},
@@ -138,8 +149,12 @@ def preprocess(data_path: str, dst_file: str, config_path: str,
         "rejected_loss_mask": {"type": "int32", "shape": [-1]},
         "rejected_ref_logps": {"type": "float32", "shape": [-1]},
     }
+    # 数据导入配置为full batch: True
     if rank_id == 0:
-        writer = FileWriter(file_name=dst_file, shard_num=1, overwrite=True)
+        file_dict = divide_data_equal_first(len(pairs), save_interval)
+        data_nums = 0
+        file_nums = 0
+        writer = FileWriter(file_name=dst_file + f"_{file_nums}", shard_num=1, overwrite=True)
         writer.add_schema(schema)
 
     import math
@@ -223,6 +238,14 @@ def preprocess(data_path: str, dst_file: str, config_path: str,
                 }
                 if rank_id == 0:
                     writer.write_raw_data([sample])
+                    data_nums += 1
+                    if data_nums == file_dict[file_nums]
+                        writer.commit()
+                        file_nums += 1
+                        data_nums = 0
+                        writer = FileWriter(file_name=dst_file + f"_{file_nums}", shard_num=1, overwrite=True)
+                        writer.add_schema(schema)
+
             nums = 0
             batch_chosen_input_ids = []
             batch_chosen_labels = []
@@ -243,8 +266,6 @@ def preprocess(data_path: str, dst_file: str, config_path: str,
             batch_rejected_attention_mask.append(rejected_attention_mask)
             batch_rejected_loss_mask.append(rejected_loss_mask)
             nums += 1
-    if rank_id == 0:
-        writer.commit()
 
 
 def main():
@@ -255,8 +276,9 @@ def main():
     parser.add_argument("--tokenizer", type=str, help="Path to tokenizer model file.")
     parser.add_argument('--seq_len', default=1024, type=int, help="Sequence length.")
     parser.add_argument('--dataset_type', type=str, default='dpo', help="Dataset type to process.")
+    parser.add_argument('--save_interval', type=int, default=2, help='Save the data interval.')
     args = parser.parse_args()
-    preprocess(args.src, args.dst, args.config, args.tokenizer, args.seq_len, args.dataset_type)
+    preprocess(args.src, args.dst, args.config, args.tokenizer, args.seq_len, args.dataset_type, args.save_interval)
 
 
 if __name__ == "__main__":
