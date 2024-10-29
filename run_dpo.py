@@ -31,6 +31,8 @@ from mindformers.tools import get_output_root_path
 from mindrlhf.models.baichuan2.baichuan2_13b import Baichuan13BDPO
 from mindrlhf.models.baichuan2.baichuan2_tokenizer import Baichuan2Tokenizer
 from mindrlhf.models.qwen2.qwen_dpo import Qwen7BDPO
+from mindrlhf.models.qwen2.qwen2_tokenizer import Qwen2Tokenizer
+from mindrlhf.models.qwen2_5.qwen2_5_tokenizer import Qwen2_5Tokenizer
 from mindrlhf import DPODataset
 
 def clear_auto_trans_output(config):

@@ -172,11 +172,9 @@ class DPODataset(BaseDataset):
             if cls._is_semi_full_batch() or cls._is_data_parallel():
                 rank_id = 0
                 dis = dataset_config.batch_size
-                print("********************dis", dis)
             else:
                 # Each card slice a small batch from the full batch
                 dis = dataset_config.batch_size // device_num
-                print("=====================dis", dis)
                 if dataset_config.batch_size % device_num != 0:
                     raise ValueError(
                         f"batch size {dataset_config.batch_size} should be a multiple of device number {device_num}."
@@ -206,20 +204,12 @@ class DPODataset(BaseDataset):
                                       input_columns=dataset_config.input_columns,
                                       output_columns=dataset_config.output_columns)
             dataset = dataset.project(columns=dataset_config.output_columns)
-
-            count = 0
-            for data in dataset.create_dict_iterator():
-                count += 1
-                print("************************data after:", data)
-                if count == 3:
-                    break
         else:
             dataset = dataset.batch(dataset_config.batch_size,
                                     drop_remainder=dataset_config.drop_remainder,
                                     output_columns=dataset_config.input_columns,
                                     num_parallel_workers=dataset_config.num_parallel_workers)
             dataset = dataset.project(columns=dataset_config.output_columns)
-            print('dataset_config.batch_size:', dataset_config.batch_size)
         for input_arg in ['chosen_input_ids', 'rejected_input_ids', 'chosen_labels', 'rejected_labels']:
             dataset = dataset.map(operations=type_cast_op, input_columns=input_arg)
         for input_arg in ['chosen_ref_logps', 'rejected_ref_logps']:
