@@ -41,7 +41,7 @@ mindspore == 2.3
 bash ../../../scripts/msrun_launcher.sh \
 "dpo_preprocess_qwen_parallel.py \
 --src /path/to/input.jsonl \
---dst /path/to/output.mindrecord \
+--dst /path/to/output \
 --config /path/to/mindrlhf/model_configs/qwen_config/process_qwen2_7b.yaml \
 --tokenizer /path/to/vocab.json \
 --merges_file /path/to/merges.txt \

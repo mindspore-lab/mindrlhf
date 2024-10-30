@@ -77,10 +77,10 @@ In the future, we will integrate more models such as LLAMA, GLM, BLOOM, etc.
 Now we support `DPO`, and models supported are shown in the following table:
 
 Table 3： The models for DPO
-|  Type     |  Baichuan2   |  Qwen2       |
-|  ----     |  ----        |  ----        |
-| offline   | Y            | Y            |
-| online    |              |              |
+|  Type     |  Baichuan2   |  Qwen2       |Qwen2_5       |
+|  ----     |  ----        |  ----        |----        |
+| offline   | Y            | Y            |Y            |
+| online    |              |              |             |
 
 In the future, we will integrate more models such as LLAMA, GLM, Qwen, etc.
 
