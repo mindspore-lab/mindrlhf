@@ -41,8 +41,8 @@ MindRLHF架构图如下：
 当前版本所依赖框架:
 |  依赖   | 版本|
 |  ----   | ----        |
-| MindSpore    | r2.3   |
-| Mindformers | r1.2    |
+| MindSpore    | r2.4.0   |
+| Mindformers | r1.3.0    |
 
 
 ## 支持列表
@@ -72,10 +72,10 @@ MindRLHF架构图如下：
 现在我们支持了 `DPO`算法, 对应的基础模型如下表所示:
 
 Table 3： 支持DPO的模型
-|  类型     |  Baichuan2   |  Qwen2   |
-|  ----       |  ----        |  ----        |
-| offline     | Y            | Y            |
-| online      |             |             |
+|  类型     |  Baichuan2   |  Qwen2   |  Qwen2_5   |
+|  ----       |  ----        |  ----        |  ----        |
+| offline     | Y            | Y            | Y            |
+| online      |             |             |             |
 
 未来我们将支持 LLAMA、GLM等模型。
 

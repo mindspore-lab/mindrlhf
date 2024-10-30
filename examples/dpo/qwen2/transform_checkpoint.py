@@ -34,7 +34,8 @@ from mindformers.tools.utils import (
     delete_file,
     remake_folder,
     is_main_rank,
-    format_path
+    format_path,
+    barrier_world
 )
 from mindformers.tools.logger import logger
 from mindformers.tools.cloud_adapter import mox_adapter
@@ -51,6 +52,7 @@ if check_in_modelarts():
     import moxing as mox
 
 __all__ = ['TransformCkpt']
+
 
 class TransformCkpt:
     """Transform src_checkpoint from src_strategy to dst_strategy."""
@@ -103,18 +105,22 @@ class TransformCkpt:
         self.is_main_rank = is_main_rank()
         self.npu_num_per_node = npu_num_per_node or get_device_num_per_node()
         self.node_num = self.world_size // self.npu_num_per_node
-        assert is_power_of_two(self.npu_num_per_node), \
-            f"The `npu_num_per_node` must be a power of 2, but get {npu_num_per_node}"
+        if not is_power_of_two(self.npu_num_per_node):
+            raise ValueError(
+                f"The `npu_num_per_node` must be a power of 2, but get {npu_num_per_node}")
 
         # Before obtaining transform_rank_id_list, check 1 ≤ transform_process_num ≤ world_size.
-        assert transform_process_num >= 1, "`transform_process_num` should not smaller than 1."
+        if transform_process_num < 1:
+            raise ValueError("transform_process_num should not smaller than 1,"
+                             f"but got {transform_process_num}.")
         if transform_process_num > self.world_size:
             logger.warning("transform_process_num: %d should not bigger than world_size: %d. \
-                transform_process_num is set to %d",
+                transform_process_num is set to %d.",
                            transform_process_num, self.world_size, self.world_size)
             transform_process_num = self.world_size
-        assert self.world_size % transform_process_num == 0, \
-            f"transform_process_num: {transform_process_num} should be divided by world_size: {self.world_size}."
+        if self.world_size % transform_process_num != 0:
+            raise ValueError(f"transform_process_num: {transform_process_num} "
+                             f"should be divided by world_size: {self.world_size}.")
         if check_in_modelarts() and 1 < transform_process_num < self.node_num:
             logger.warning("transform_process_num: %d should not smaller than \
                 node_num = world_size // npu_num_per_node = %d when training on AICC. \
@@ -243,10 +249,12 @@ class TransformCkpt:
                 dst_strategy = None
 
             if check_in_modelarts():
-                assert mox.file.exists(self.transformed_checkpoint_dir_obs), \
-                    f"{self.transformed_checkpoint_dir_obs} is not found!"
-                if self.world_size > 1:
-                    assert mox.file.exists(self.dst_strategy_dir_obs), f"{self.dst_strategy_dir_obs} is not found!"
+                if not mox.file.exists(self.transformed_checkpoint_dir_obs):
+                    raise ValueError(f"transformed_checkpoint_dir_obs: "
+                                     f"{self.transformed_checkpoint_dir_obs} is not found!")
+                if self.world_size > 1 and not mox.file.exists(self.dst_strategy_dir_obs):
+                    raise ValueError(f"dst_strategy_dir_obs: {self.dst_strategy_dir_obs} is not found!")
+
 
             # Get final dst_strategy in auto_trans_ckpt mode.
             dst_strategy = self.get_dst_strategy(dst_strategy)
@@ -258,12 +266,13 @@ class TransformCkpt:
                 src_ckpt_dir = os.path.join(soft_link_dir, ckpt_name)
                 # Clear dst_ckpt_dir.
                 dst_ckpt_dir = os.path.join(dst_checkpoint_dir, ckpt_name)
-                self.remake_folder_by_transform_ckpt(dst_ckpt_dir, permissions=0o750)
+                remake_folder(dst_ckpt_dir, permissions=0o750)
                 if check_in_modelarts():
                     dst_ckpt_dir_obs = os.path.join(self.transformed_checkpoint_dir_obs, ckpt_name)
-                    self.remake_folder_by_transform_ckpt(dst_ckpt_dir_obs)
-                logger.info("The transformed checkpoint will be saved under %s.", dst_ckpt_dir)
+                    remake_folder(dst_ckpt_dir_obs)
+                barrier_world(f"Remake {dst_ckpt_dir} by main rank.")
 
+                logger.info("The transformed checkpoint will be saved under %s.", dst_ckpt_dir)
                 self.transform_ckpt(
                     src_checkpoint=src_ckpt_dir,
                     dst_checkpoint_dir=dst_ckpt_dir,
@@ -414,10 +423,6 @@ class TransformCkpt:
             soft_link = os.path.join(soft_link_dir, ckpt_name.split(".")[0], "rank_0", ckpt_name)
             make_soft_link(soft_link, checkpoint)
 
-    def remake_folder_by_transform_ckpt(self, folder_path, permissions=None):
-        remaked_txt = remake_folder(folder_path, permissions)
-        self.cache_list.append(remaked_txt)
-
     def clear_cache(self):
         """Clear cache file"""
         if self.is_main_rank:
@@ -437,7 +442,8 @@ class TransformCkpt:
         if not strategy_path or strategy_path == "None":
             return None
 
-        assert os.path.exists(strategy_path), f'{strategy_path} not found!'
+        if not os.path.exists(strategy_path):
+            raise ValueError(f'strategy_path: {strategy_path} not found!')
 
         if os.path.isfile(strategy_path):
             return strategy_path
@@ -471,8 +477,10 @@ class TransformCkpt:
         if self.world_size == 1:
             return None
 
-        assert dst_strategy.endswith(f"_rank_{self.rank_id}.ckpt") and \
-            os.path.exists(dst_strategy), f"`dst_strategy`={dst_strategy} is not found!"
+        if not (dst_strategy.endswith(f"_rank_{self.rank_id}.ckpt") and
+                os.path.exists(dst_strategy)):
+            raise ValueError(f"dst_strategy: {dst_strategy} is not found!")
+
 
         logger.info(".........Collecting strategy.........")
         if check_in_modelarts():
@@ -495,7 +503,7 @@ class TransformCkpt:
             logger.info(".........Merging strategy.........")
             merged_strategy_path = self.get_strategy(self.dst_strategy_dir)
             logger.info(".........Merging succeed.........")
-            if not self.rank_id and check_in_modelarts():
+            if self.rank_id == 0 and check_in_modelarts():
                 self.send_strategy_to_obs(merged_strategy_path)
         else:
             logger.info(".........Waiting merge strategy.........")

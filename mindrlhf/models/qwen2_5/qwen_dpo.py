@@ -35,7 +35,7 @@ from mindformers.modules.transformer.op_parallel_config import _check_config
 from mindformers.tools.register.register import MindFormerModuleType, MindFormerRegister
 from mindformers import LlamaConfig, LlamaForCausalLM
 
-__all__ = ['Qwen7BDPO']
+__all__ = ['Qwen2_5_7BDPO']
 
 class DPOLoss(nn.Cell):
     def __init__(self, config):
@@ -250,7 +250,7 @@ class DPOLossV2(nn.Cell):
         return dpo_loss, sft_loss, chosen_rewards, rejected_rewards
 
 @MindFormerRegister.register(MindFormerModuleType.MODELS)
-class Qwen7BDPO(LlamaForCausalLM):
+class Qwen2_5_7BDPO(LlamaForCausalLM):
     r"""
         Provide qwen1.5_7B training loss or logits through network.
         Args:
@@ -279,7 +279,7 @@ class Qwen7BDPO(LlamaForCausalLM):
 
     @lazy_inline
     def __init__(self, config: LlamaConfig = None):
-        super(Qwen7BDPO, self).__init__(config)
+        super(Qwen2_5_7BDPO, self).__init__(config)
         _check_config(config.parallel_config)
         self.config = config
         self.seq_length = config.seq_length
