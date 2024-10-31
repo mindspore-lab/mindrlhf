@@ -39,7 +39,7 @@ from mindformers.modules.layers import Linear, _check_input_dtype, build_alibi_t
 from mindformers.modules.transformer import TransformerOpParallelConfig, LowerTriangularMaskWithDynamic
 from mindformers.modules.infer_attention import InferAttention
 from mindformers.tools.register.register import MindFormerModuleType, MindFormerRegister
-from mindformers.models.utils import set_layer_stage_recompute
+from mindformers.models.utils import LayerSetting
 from mindformers.models.llama.llama_config import LlamaConfig
 from mindformers.models.llama.llama_layer import LlamaEmbedding, LlamaFeedForward, LlamaRMSNorm
 from mindformers.tools.logger import logger
@@ -147,6 +147,7 @@ class Baichuan13BV2ForCausalLM(Baichuan2PreTrainedModel):
 
         self.load_checkpoint(config)
         self.set_model_predict_config()
+
     # pylint: disable=W0613
     def prepare_inputs_for_generation(self, input_ids, **kwargs):
         if self.config.is_dynamic and "origin_inputs" in kwargs:
@@ -171,7 +172,7 @@ class Baichuan13BV2ForCausalLM(Baichuan2PreTrainedModel):
         """Get Baichuan13BV2 model input tuple for transform ckpt."""
         input_ids = Tensor(input_ids, mstype.int32)
         bs, seq = input_ids.shape[0], input_ids.shape[1]
-        slot_mapping = Tensor(np.ones(shape=tuple([bs*seq])), mstype.int32)
+        slot_mapping = Tensor(np.ones(shape=tuple([bs * seq])), mstype.int32)
         return input_ids, None, None, None, None, None, None, None, None, None, None, slot_mapping
 
     def add_flags_custom(self, is_first_iteration):
@@ -292,6 +293,7 @@ class Baichuan13BV2Model(Baichuan2PreTrainedModel):
                                              param_init_type=config.param_init_type,
                                              parallel_optimizer=True)
         self.layers = nn.CellList()
+        self.layers_setting = LayerSetting(config.offset, config.parallel_config, config.num_layers)
         for layer_id in range(config.num_layers):
             layer = Baichuan13BDecodeLayer(config.batch_size,
                                            config.seq_length,
@@ -313,7 +315,7 @@ class Baichuan13BV2Model(Baichuan2PreTrainedModel):
                                            block_size=self.block_size,
                                            num_blocks=self.num_blocks,
                                            parallel_config=config.parallel_config)
-            set_layer_stage_recompute(layer, layer_id, config.offset, config.parallel_config, config.num_layers)
+            self.layers_setting(layer, layer_id)
             self.layers.append(layer)
         self.norm_out = LlamaRMSNorm(config.hidden_size, config.rms_norm_eps,
                                      compute_type=config.layernorm_compute_type)
@@ -358,7 +360,7 @@ class Baichuan13BV2Model(Baichuan2PreTrainedModel):
             mask = self.casual_mask(tokens)  # mask: mask: [bs , 1, seq, seq]
             input_mask = self.cast(self.not_equal(tokens, self.pad_token_id), mstype.float16)
             alibi_tensor = self.slice(self.alibi_tensor, (0, 0, 0, 0),
-                                          (1, self.alibi_tensor.shape[1], seq_len, seq_len), (1, 1, 1, 1))
+                                      (1, self.alibi_tensor.shape[1], seq_len, seq_len), (1, 1, 1, 1))
             alibi_tensor = self.mul_alibi(alibi_tensor, self.reshape(input_mask, (bs, 1, -1, 1)))
         else:
             mask = None
@@ -929,7 +931,7 @@ class DPOLoss(nn.Cell):
         self.log = P.Log()
         self.reduce_sum = P.ReduceSum(keep_dims=False)
         self.slice = P.StridedSlice().shard(((1, 1),))  # ?
-        self.slice_ind = P.StridedSlice().shard(((1,),))    # ?
+        self.slice_ind = P.StridedSlice().shard(((1,),))  # ?
         self.mul = P.Mul().shard(((dp, mp), (dp, mp)))
         self.sub = P.Sub().shard(((dp, mp), (dp, mp)))
         self.log_softmax = P.LogSoftmax()
@@ -995,7 +997,7 @@ class DPOLoss(nn.Cell):
         # rejected_ref_logps: [bs,]
         # [bs,]
         all_logps = self._get_batch_logps(policy_logits, policy_labels, loss_mask)
-        bs = all_logps.shape[0] // 2    # a sample has two bs responses (chosen and rejected)
+        bs = all_logps.shape[0] // 2  # a sample has two bs responses (chosen and rejected)
         policy_chosen_logps = self.slice_ind(all_logps, (0,), (bs,), (1,))
         policy_rejected_logps = self.slice_ind(all_logps, (bs,), (2 * bs,), (1,))
         losses, chosen_rewards, rejected_rewards = self.dpo_loss(
@@ -1018,11 +1020,13 @@ class DPOCrossEntropy(CrossEntropyLoss):
         self.slice_2d = P.StridedSlice().shard(((dp, mp),))
 
     def construct(self, logits, label, input_mask):
-        bs, seq_len, vocab_size = logits.shape    # a sample has two bs responses (chosen and rejected)
+        bs, seq_len, vocab_size = logits.shape  # a sample has two bs responses (chosen and rejected)
         policy_chosen_logps = self.slice_3d(logits, (0, 0, 0), (bs // 2, seq_len, vocab_size), (1, 1, 1))
         label = self.slice_2d(label, (0, 0), (bs // 2, seq_len), (1, 1))
         input_mask = self.slice_2d(input_mask, (0, 0), (bs // 2, seq_len), (1, 1))
-        return super().construct(policy_chosen_logps.reshape((-1, policy_chosen_logps.shape[-1])), label.reshape((-1,)), input_mask.reshape((-1,)))
+        return super().construct(policy_chosen_logps.reshape((-1, policy_chosen_logps.shape[-1])), label.reshape((-1,)),
+                                 input_mask.reshape((-1,)))
+
 
 @MindFormerRegister.register(MindFormerModuleType.LOSS)
 class DPOLossV2(nn.Cell):
@@ -1034,7 +1038,7 @@ class DPOLossV2(nn.Cell):
         self.log = P.Log()
         self.reduce_sum = P.ReduceSum(keep_dims=False)
         self.slice = P.StridedSlice().shard(((1, 1),))  # ?
-        self.slice_ind = P.StridedSlice().shard(((1,),))    # ?
+        self.slice_ind = P.StridedSlice().shard(((1,),))  # ?
         self.slice_mask = P.StridedSlice().shard(((1, 1),))
         self.mul = P.Mul().shard(((dp, mp), (dp, mp)))
         self.sub = P.Sub().shard(((dp, mp), (dp, mp)))
@@ -1081,7 +1085,8 @@ class DPOLossV2(nn.Cell):
         per_token_logps = self.squeeze(per_token_logps)
         print("per_token_logps", per_token_logps)
         if self.average_log_prob:
-            print("per_token_logps final", self.reduce_sum(per_token_logps * loss_mask, -1), self.reduce_sum(loss_mask, -1))
+            print("per_token_logps final", self.reduce_sum(per_token_logps * loss_mask, -1),
+                  self.reduce_sum(loss_mask, -1))
             return self.reduce_sum(per_token_logps * loss_mask, -1) / self.reduce_sum(loss_mask, -1)
         else:
             return self.reduce_sum(per_token_logps * loss_mask, -1)
@@ -1112,7 +1117,8 @@ class DPOLossV2(nn.Cell):
         rejected_rewards = self.beta * (policy_rejected_logps - ref_rejected_logps)
         return losses, chosen_rewards, rejected_rewards, policy_chosen_logps_avg
 
-    def construct(self, policy_logits, policy_labels, chosen_loss_mask, rejected_loss_mask, ref_chosen_logps, ref_rejected_logps):
+    def construct(self, policy_logits, policy_labels, chosen_loss_mask, rejected_loss_mask, ref_chosen_logps,
+                  ref_rejected_logps):
         # policy_logits: [bs, seq_len, vocab_size]
         # policy_labels: [bs, seq_len]
         # loss_mask: [bs, seq_len]
@@ -1121,7 +1127,7 @@ class DPOLossV2(nn.Cell):
         # [bs,]
         loss_mask = ops.concat((chosen_loss_mask, rejected_loss_mask), axis=0)
         all_logps = self._get_batch_logps(policy_logits, policy_labels, loss_mask)
-        bs = all_logps.shape[0] // 2    # a sample has two bs responses (chosen and rejected)
+        bs = all_logps.shape[0] // 2  # a sample has two bs responses (chosen and rejected)
         policy_chosen_logps = self.slice_ind(all_logps, (0,), (bs,), (1,))
         policy_rejected_logps = self.slice_ind(all_logps, (bs,), (2 * bs,), (1,))
         print("policy_chosen_logps", policy_chosen_logps)
@@ -1144,6 +1150,7 @@ class DPOLossV2(nn.Cell):
         if self.phase == "train":
             return dpo_loss, sft_loss
         return dpo_loss, sft_loss, chosen_rewards, rejected_rewards
+
 
 @MindFormerRegister.register(MindFormerModuleType.MODELS)
 class Baichuan13BDPO(Baichuan13BV2ForCausalLM):
@@ -1206,7 +1213,7 @@ class Baichuan13BDPO(Baichuan13BV2ForCausalLM):
             loss_parallel_config = copy.deepcopy(config)
             loss_parallel_config.parallel_config.model_parallel = dp * mp
             loss_parallel_config.parallel_config.data_parallel = 1
-            if dp >= 32 and dp % 8 == 0: # For large scale training
+            if dp >= 32 and dp % 8 == 0:  # For large scale training
                 loss_parallel_config.parallel_config.model_parallel = 8
                 loss_parallel_config.parallel_config.data_parallel = dp * mp // 8
             self.dpo_loss = DPOLossV2(loss_parallel_config)
@@ -1219,15 +1226,15 @@ class Baichuan13BDPO(Baichuan13BV2ForCausalLM):
             loss_parallel_config = copy.deepcopy(config.parallel_config)
             loss_parallel_config.model_parallel = dp * mp
             loss_parallel_config.data_parallel = 1
-            if dp >= 32 and dp % 8 == 0: # For large scale training
+            if dp >= 32 and dp % 8 == 0:  # For large scale training
                 loss_parallel_config.model_parallel = 8
                 loss_parallel_config.data_parallel = dp * mp // 8
             self.sft_loss = DPOCrossEntropy(parallel_config=loss_parallel_config)
 
     # pylint: disable=W0613
-    def construct(self, chosen_input_ids, chosen_labels=None, chosen_loss_mask=None, 
-                    chosen_ref_logps=None, rejected_input_ids=None, rejected_labels=None,
-                    rejected_loss_mask=None, rejected_ref_logps=None,
+    def construct(self, chosen_input_ids, chosen_labels=None, chosen_loss_mask=None,
+                  chosen_ref_logps=None, rejected_input_ids=None, rejected_labels=None,
+                  rejected_loss_mask=None, rejected_ref_logps=None,
                   input_position=None, position_ids=None,
                   input_embeds=None, init_reset=True, batch_valid_length=None, batch_index=None, zactivate_len=None,
                   block_tables=None, slot_mapping=None):
@@ -1279,5 +1286,6 @@ class Baichuan13BDPO(Baichuan13BV2ForCausalLM):
         # loss = self.loss(logits, labels, input_mask)
         policy_logits = self.cast(logits, mstype.float32)
         # sft_loss = self.sft_loss(policy_logits, labels, loss_mask)
-        dpo_loss, sft_loss = self.dpo_loss(policy_logits, labels, chosen_loss_mask, rejected_loss_mask, chosen_ref_logps.reshape((-1,)), rejected_ref_logps.reshape((-1,)))
+        dpo_loss, sft_loss = self.dpo_loss(policy_logits, labels, chosen_loss_mask, rejected_loss_mask,
+                                           chosen_ref_logps.reshape((-1,)), rejected_ref_logps.reshape((-1,)))
         return self.alpha * dpo_loss + self.beta * sft_loss

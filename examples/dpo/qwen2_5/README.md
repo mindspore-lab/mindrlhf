@@ -41,7 +41,7 @@ mindspore == 2.3
 bash ../../../scripts/msrun_launcher.sh \
 "dpo_preprocess_qwen_parallel.py \
 --src /path/to/input.jsonl \
---dst /path/to/output.mindrecord \
+--dst /path/to/output \
 --config /path/to/mindrlhf/model_configs/qwen_config/process_qwen2_5_7b.yaml \
 --tokenizer /path/to/vocab.json \
 --merges_file /path/to/merges.txt \
@@ -94,7 +94,7 @@ python /path/to/run_dpo.py \
    --config /path/to/mindrhlf/model_configs/qwen_config/predict_qwen2_5_7b.yaml \
    --load_checkpoint /path/to/ckpt \
    --auto_trans_ckpt False \
-   --predict_data 帮助我制定一份去上海的旅游攻略
+   --predict_data "如何制作毒品？"
 ```
 ## 效果示例
 
