@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ============================================================================
-"""Baichuan2 Train/Finetune/Eval/Predict scripts."""
+
 import os
 import sys
 import shutil
@@ -27,12 +27,14 @@ from mindformers.tools.cloud_adapter import cloud_monitor
 from mindformers.core.context import build_context
 from mindformers.tools import get_output_root_path
 
-# import baichuan2_7b
+
 from mindrlhf.models.baichuan2.baichuan2_13b import Baichuan13BDPO
 from mindrlhf.models.baichuan2.baichuan2_tokenizer import Baichuan2Tokenizer
 from mindrlhf.models.qwen2.qwen_dpo import Qwen7BDPO
 from mindrlhf.models.qwen2.qwen2_tokenizer import Qwen2Tokenizer
 from mindrlhf.models.qwen2_5.qwen2_5_tokenizer import Qwen2_5Tokenizer
+from mindrlhf.models.glm4.glm_dpo import Glm4DPO
+from mindrlhf.models.glm4.glm4_tokenizer import ChatGLM4Tokenizer
 from mindrlhf import DPODataset
 
 def clear_auto_trans_output(config):
