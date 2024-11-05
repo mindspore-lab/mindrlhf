@@ -8,7 +8,7 @@ from mindspore.mindrecord import FileWriter
 
 import mindspore as ms
 from mindformers import AutoModel
-from mindrlhf.models.qwen2.qwen2_5_tokenizer import Qwen2_5Tokenizer
+from mindrlhf.models.qwen2_5.qwen2_5_tokenizer import Qwen2_5Tokenizer
 
 from mindformers.models.build_tokenizer import build_tokenizer
 from mindformers.core.parallel_config import build_parallel_config
@@ -104,8 +104,8 @@ def get_logps(model, input_ids, labels, attention_mask, loss_mask):
     return logps.asnumpy()
 
 
-def preprocess(data_path: str, dst_file: str, config_path: str, tokenizer_path: str, seq_len: int, dataset_type: str,
-               save_interval: int):
+def preprocess(data_path: str, dst_file: str, config_path: str, tokenizer_path: str, merges_file: str, seq_len: int,
+               dataset_type: str, save_interval: int):
     config = MindFormerConfig(config_path)
     logger.info("..........Build Context Config..........")
     print('config', config)
@@ -150,8 +150,9 @@ def preprocess(data_path: str, dst_file: str, config_path: str, tokenizer_path: 
         file_dict = divide_data_equal_first(len(pairs), save_interval)
         data_nums = 0
         file_nums = 0
-        writer = FileWriter(file_name=dst_file + f"_{file_nums}", shard_num=1, overwrite=True)
+        writer = FileWriter(file_name=f"{dst_file}_{file_nums}.mindrecord", shard_num=1, overwrite=True)
         writer.add_schema(schema)
+
 
     import math
     nums = 0
@@ -236,14 +237,13 @@ def preprocess(data_path: str, dst_file: str, config_path: str, tokenizer_path: 
                 if rank_id == 0:
                     writer.write_raw_data([sample])
                     data_nums += 1
-                    if data_nums == file_dict[file_nums]
+                    if data_nums == file_dict[file_nums]:
                         writer.commit()
                         file_nums += 1
                         data_nums = 0
-                        writer = FileWriter(file_name=dst_file + f"_{file_nums}", shard_num=1, overwrite=True)
-                        writer.add_schema(schema)
-                        if rank_id == 0:
-                    writer.write_raw_data([sample])
+                        if file_nums != len(file_dict):
+                            writer = FileWriter(file_name=f"{dst_file}_{file_nums}.mindrecord", shard_num=1, overwrite=True)
+                            writer.add_schema(schema)
             nums = 0
             batch_chosen_input_ids = []
             batch_chosen_labels = []

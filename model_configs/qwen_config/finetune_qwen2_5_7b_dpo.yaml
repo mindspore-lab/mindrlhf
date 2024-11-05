@@ -194,7 +194,7 @@ model:
     beta: 0.1   # coef for sft loss
 
   arch:
-    type: Qwen7BDPO
+    type: Qwen2_5_7BDPO
 
 processor:
   return_tensors: ms
