@@ -10,18 +10,20 @@ DPO训练中使用的网络和Mindformers中使用的结构一致。请参考[�
 
 参考Mindformers中的网络权重和相关配置文件的下载方式，请参考[链接](https://gitee.com/mindspore/mindformers/blob/dev/research/qwen2/qwen2.md)，下载模型权重，vocab.json，merged.txt，config.json文件。
 
-运行如下命令将pt权重转换到ms权重，convert_weight.py在[MindFormers-Qwen2](https://gitee.com/mindspore/mindformers/tree/dev/research/qwen2)中。
+运行如下命令，采用[convert_weight.py](https://gitee.com/mindspore/mindformers/blob/r1.2.0/convert_weight.py)将pt权重转换到ms权重。
 
 ```sh
-python convert_weight.py --model qwen2 --input_path TORCH_CKPT_DIR --output_path {path}/MS_CKPT_NAME --dtype bf16
+python convert_weight.py --model glm-n \
+--input_path path/to/TORCH_CKPT_DIR/ \
+--output_path path/to/ms.ckpt \
+--dtype bf16
 
 # 参数说明
-model:       模型名称
-input_path:  下载HuggingFace权重的文件夹路径
-output_path: 转换后的MindSpore权重文件保存路径
-dtype:       转换权重的精度
+# model:       模型名称
+# input_path:  下载HuggingFace权重的文件夹路径，注意最后面有/
+# output_path: 转换后的MindSpore权重文件保存路径
+# dtype:       转换权重的精度
 ```
-
 
 ### 版本依赖
 
