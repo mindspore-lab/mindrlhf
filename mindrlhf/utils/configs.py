@@ -40,7 +40,7 @@ def set_weight_decay(params):
 
 def combine_config(ppo_config, model_config):
     config_temp = asdict(ppo_config)
-    for k, v in model_config.items():
+    for k, v in model_config.to_dict().items():
         if k not in config_temp:
             config_temp[k] = v
     config_temp['max_prompt_length'] = config_temp['seq_length'] - config_temp['max_decode_length']
@@ -171,8 +171,12 @@ def init_ppo_dataset(trainer):
     dataset = dataset.map(operations=type_cast_op_fp16, input_columns="advantages")
     dataset = dataset.map(operations=type_cast_op_fp16, input_columns="returns")
     dataset = dataset.map(operations=type_cast_op_int32, input_columns="pretrain_ids")
-    dataset = dataset.map(operations=type_cast_op_fp16, input_columns="loss_mask")
-    dataset = dataset.map(operations=type_cast_op_fp16, input_columns="attention_mask")
+    dataset = dataset.map(operations=type_cast_op_int32, input_columns="loss_mask")
+    dataset = dataset.map(operations=type_cast_op_int32, input_columns="attention_mask")
+    micro_batch_num = 1
+    if sft_model_config.parallel_config.pipeline_stage > 1:
+        micro_batch_num = sft_model_config.parallel_config.micro_batch_num
     dataset = dataset.batch(batch_size=ppo_config.batch_size
-                            * sft_model_config.parallel_config.data_parallel)
+                            * sft_model_config.parallel_config.data_parallel
+                            * micro_batch_num)
     return dataset

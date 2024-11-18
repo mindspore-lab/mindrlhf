@@ -22,6 +22,8 @@ from mindspore.ops import ReduceOp
 import mindspore.nn as nn
 import mindspore.common.dtype as mstype
 from mindspore.ops import operations as P
+from mindspore.ops.function.math_func import sum
+from mindspore.common.initializer import TruncatedNormal
 from mindformers.modules.transformer import AttentionMask
 from mindformers.core.loss.loss import CrossEntropyLoss
 from mindformers.modules.layers import Linear
@@ -260,6 +262,10 @@ class CausalLMHydraWithValueHead(BaseModel):
                 tokens = input_ids
             output_states = self.backbone(tokens, input_position, init_reset, batch_valid_length)
             logits_2d = self.lm_head(output_states)
+        elif self.model_type == "glm4":
+            tokens = input_ids
+            output_states = self.backbone(tokens)
+            logits_2d = self.lm_head(output_states)
         else:
             if self.model.phase == "train":
                 tokens = self.model.stridedslice(input_ids, (0, 0), (batch_size, seq_length - 1), (1, 1))
@@ -285,6 +291,7 @@ class CausalLMHydraWithValueHead(BaseModel):
         if samples is not None:
             logprobs_labels = self.logprobs_of_labels(logits, samples, batch_size, seq_length)
             if return_value == True:
+                # OG code is not equal to the logic in criticmodel
                 value = self.v_head1(self.v_head0(output_states))
                 value = self.reshape(value, (batch_size, seq_length))
                 return logprobs_labels, value
@@ -330,14 +337,16 @@ class PPO_model(nn.Cell, GeneratorMixin):
     PPO_model
     """
 
-    def __init__(self, ppo_config, policy_model, critic_model):
+    def __init__(self, ppo_config, policy_model, critic_model=None):
         super(PPO_model, self).__init__()
         self.ppo_config = ppo_config
+        self.is_shared_backbone = ppo_config.is_shared_backbone
         self.pretrain_coef = self.ppo_config.pretrain_coef
         self.use_past = self.ppo_config.use_past
         self.pad_token_id = Tensor(ppo_config.pad_token_id, mstype.int32)
         self.policy_model = policy_model
-        self.critic_model = critic_model
+        if not ppo_config.is_shared_backbone:
+            self.critic_model = critic_model
         self.stack = P.Stack(axis=1)
         self.allreduce_sum = P.AllReduce(ReduceOp.SUM)
         self.reduce_sum = P.ReduceSum(keep_dims=False)
@@ -395,9 +404,12 @@ class PPO_model(nn.Cell, GeneratorMixin):
         old_values = values
         response_length = F.shape(old_rewards)[1]
         tokens = response_tensors
-        logprobs = self.policy_model(tokens, samples=tokens)
-        tokens = self.depend(tokens, logprobs)
-        values_pred = self.critic_model(tokens)
+        if self.is_shared_backbone:
+            logprobs, values_pred = self.policy_model(tokens, samples=tokens, return_value=True)
+        else:
+            logprobs = self.policy_model(tokens, samples=tokens)
+            tokens = self.depend(tokens, logprobs)
+            values_pred = self.critic_model(tokens)
 
         start = F.shape(query_tensors)[1] - 1
         end = start + response_length
@@ -451,7 +463,7 @@ class PPO_model(nn.Cell, GeneratorMixin):
             old_values - self.cliprange_value,
             old_values + self.cliprange_value,
         )
-        n = mask.sum()
+        n = sum(mask, dtype=mstype.int32)
 
         vf_loss1 = (values - returns) ** 2
         vf_loss2 = (values_clipped - returns) ** 2

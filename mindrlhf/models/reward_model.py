@@ -98,6 +98,9 @@ class RewardModel(BaseModel):
             else:
                 tokens = input_ids
             output_states = self.backbone(tokens, input_position, init_reset, batch_valid_length)
+        elif self.model_type == 'glm4':
+            tokens = input_ids
+            output_states = self.backbone(tokens)
         else:
             input_mask = self.model.not_equal(input_ids, self.model.pad_token_id).astype(mstype.float32)
             output_states, _ = self.backbone(input_ids, input_mask, init_reset, batch_valid_length)
@@ -201,6 +204,9 @@ class CriticModel(BaseModel):
             else:
                 tokens = input_ids
             output_states = self.backbone(tokens, input_position, init_reset, batch_valid_length)
+        elif self.model_type == 'glm4':
+            tokens = input_ids
+            output_states = self.backbone(tokens)
         else:
             init_reset = True
             batch_valid_length = None
