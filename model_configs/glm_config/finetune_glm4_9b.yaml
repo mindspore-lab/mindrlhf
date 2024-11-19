@@ -75,8 +75,8 @@ model:
     qkv_concat: False
     mlp_concat: False
     use_llama_rope: True
-    alpha: 1.0  # coef for dpo loss
-    beta: 1.0   # coef for sft loss
+    alpha: 1.0  # coef for sft loss
+    beta: 1.0   # temperature of dpo loss in logsigmoid function
   arch:
     type: Glm4DPO
 

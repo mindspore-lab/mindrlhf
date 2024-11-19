@@ -378,4 +378,4 @@ class Qwen7BDPO(LlamaForCausalLM):
             logits = self.reshape(logits, (bsz, tokens.shape[1], logits.shape[-1]))
         policy_logits = self.cast(logits, mstype.float32)
         dpo_loss, sft_loss = self.dpo_loss(policy_logits, labels, chosen_loss_mask, rejected_loss_mask, chosen_ref_logps.reshape((-1,)), rejected_ref_logps.reshape((-1,)))
-        return self.alpha * dpo_loss + self.beta * sft_loss
+        return  dpo_loss + self.alpha * sft_loss
