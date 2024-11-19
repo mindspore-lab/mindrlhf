@@ -1,6 +1,6 @@
 seed: 0
 output_dir: './output' # path to save checkpoint/strategy
-load_checkpoint: '/path/to/Baichuan2_13B_Base.ckpt'
+load_checkpoint: ''
 src_strategy_path_or_dir: ''
 auto_trans_ckpt: False  # If true, auto transform load_checkpoint to load in distributed model
 only_save_strategy: False
@@ -87,7 +87,7 @@ parallel:
 # default parallel of device num = 8 for Atlas 800T A2
 parallel_config:
   data_parallel: 1
-  model_parallel: 4
+  model_parallel: 8
   pipeline_stage: 1
   use_seq_parallel: False
   micro_batch_num: 1
@@ -153,7 +153,7 @@ model:
     is_dynamic: True
     extend_method: "None" # support "None", "PI", "NTK"
     offset: 0
-    checkpoint_name_or_path: "/home/qianjiahong/ckpt/baichuan/Baichuan2_13B_Base.ckpt" #/home/qianjiahong/ckpt/baichuan/Baichuan2_13B_Base.ckpt
+    checkpoint_name_or_path: ""
     repetition_penalty: 1
     temperature: 1.0
     max_decode_length: 512

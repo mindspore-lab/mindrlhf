@@ -1,6 +1,6 @@
 seed: 0
 output_dir: './output' # path to save checkpoint/strategy
-load_checkpoint: '/path/to/Qwen2-7B.ckpt'
+load_checkpoint: ''
 src_strategy_path_or_dir: ''
 auto_trans_ckpt: True  # If true, auto transform load_checkpoint to load in distributed model
 only_save_strategy: False
@@ -122,7 +122,7 @@ model:
     block_size: 32
     num_blocks: 128
     offset: 0
-    checkpoint_name_or_path: "/path/to/Qwen2-7B.ckpt"
+    checkpoint_name_or_path: ""
     repetition_penalty: 1
     max_decode_length: 4096
     top_k: 0

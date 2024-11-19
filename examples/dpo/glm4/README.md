@@ -37,11 +37,11 @@ mindspore == 2.4
 
 ```sh
 # 目前命令行只支持如下配置，更多配置请到yaml中修改
-bash ../../../scripts/msrun_launcher.sh \
-"dpo_preprocess_glm4_parallel.py \
+bash scripts/msrun_launcher.sh \
+"mindrlhf/tools/dpo_preprocess.py \
 --src /path/to/input.jsonl \
 --dst /path/to/output.mindrecord \
---config process_glm4_9b.yaml \
+--config model_configs/glm_config/process_glm4_9b.yaml \
 --tokenizer /path/to/tokenizer.model \
 --load_checkpoint /path/to/glm4_9b.ckpt \
 --auto_trans_ckpt True \
@@ -59,7 +59,17 @@ auto_trans_ckpt: 是否自动转化权重
 seq_len: 输出数据的序列长度
 dataset_type: 需要处理的数据类型
 ```
-
+如果需要将处理后的多个数据文件合并为一个，数据处理脚本如下：
+```Shell
+python mindrlhf/tools/dpo_preprocess.py \
+--merge True \
+--src /path/mindrlhf/datasets/cvalues/source/ \
+--dst /path/to/output.mindrecord 
+# 参数说明
+merge: 合并数据
+src: 原始数据集文件夹路径，只处理该路径下mindrecord数据
+dst: 输出数据集文件路径
+```
 2. 微调
 
 ```sh
@@ -80,7 +90,7 @@ bash ../../../scripts/msrun_launcher.sh \
    ​		训练完成后，会存储下切片后的权重，如单机8卡的权重，但是在实际应用中，可能只需要单机单卡，就可以进行推理功能。考虑到性能的优势，一般推荐单机单卡进行推理，MindRLHF提供了权重转换的脚本(transform_checkpoint.py)，运行如下命令将多卡权重合并为单卡。
 
 ```sh
-python transform_checkpoint.py \
+python mindrlhf/tools/transform_checkpoint.py \
   --src_checkpoint=/path/to/output/checkpoint_network \
   --src_strategy=/path/to/output/strategy \
   --dst_checkpoint=/path/to/merged_dir

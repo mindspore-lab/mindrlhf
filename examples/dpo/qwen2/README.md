@@ -38,11 +38,11 @@ mindspore == 2.3
 ```sh
 # 目前命令行只支持如下配置，更多配置请到yaml中修改
 # 如需指定ref模型，请修改yaml中的checkpoint_name_or_path
-bash ../../../scripts/msrun_launcher.sh \
-"dpo_preprocess_qwen_parallel.py \
+bash scripts/msrun_launcher.sh \
+"mindrlhf/tools/dpo_preprocess.py \
 --src /path/to/input.jsonl \
---dst /path/to/output \
---config /path/to/mindrlhf/model_configs/qwen_config/process_qwen2_7b.yaml \
+--dst /path/to/output.mindrecord \
+--config model_configs/qwen_config/process_qwen2_7b.yaml \
 --tokenizer /path/to/vocab.json \
 --merges_file /path/to/merges.txt \
 --seq_len 4097 \
@@ -58,6 +58,17 @@ merges_file: merges.txt文件路径
 seq_len: 输出数据的序列长度
 dataset_type: 需要处理的数据类型
 save_interval: 生成数据集数量
+```
+如果需要将处理后的多个数据文件合并为一个，数据处理脚本如下：
+```Shell
+python mindrlhf/tools/dpo_preprocess.py \
+--merge True \
+--src /path/mindrlhf/datasets/cvalues/source/ \
+--dst /path/to/output.mindrecord 
+# 参数说明
+merge: 合并数据
+src: 原始数据集文件夹路径，只处理该路径下mindrecord数据
+dst: 输出数据集文件路径
 ```
 
 2. 微调
@@ -80,7 +91,7 @@ bash ../../../scripts/msrun_launcher.sh \
 
 训练完成后，会存储下切片后的权重，如单机8卡的权重，但是在实际应用中，可能只需要单机单卡，就可以进行推理功能。考虑到性能的优势，一般推荐单机单卡进行推理，MindRLHF提供了权重转换的脚本(transform_checkpoint.py)，参考示例如下：
 ```sh
-python transform_checkpoint.py \
+python mindrlhf/tools/transform_checkpoint.py \
    --src_checkpoint=/path/output/checkpoint_network \
    --src_strategy=/path/output/strategy \
    --dst_checkpoint=/path/mindrlhf/examples/dpo/baichuan2

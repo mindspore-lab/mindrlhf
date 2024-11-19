@@ -30,6 +30,7 @@ from mindspore.ops import operations as P
 from mindspore.common.initializer import initializer, HeUniform
 from mindspore.parallel._utils import _get_parallel_mode, _is_sharding_propagation
 
+import mindformers
 from mindformers.core.loss.loss import CrossEntropyLoss
 from mindformers.modules.flash_attention import FlashAttention
 from mindformers.models.modeling_utils import PreTrainedModel
@@ -39,13 +40,12 @@ from mindformers.modules.layers import Linear, _check_input_dtype, build_alibi_t
 from mindformers.modules.transformer import TransformerOpParallelConfig, LowerTriangularMaskWithDynamic
 from mindformers.modules.infer_attention import InferAttention
 from mindformers.tools.register.register import MindFormerModuleType, MindFormerRegister
-from mindformers.models.utils import set_layer_stage_recompute
 from mindformers.models.llama.llama_config import LlamaConfig
 from mindformers.models.llama.llama_layer import LlamaEmbedding, LlamaFeedForward, LlamaRMSNorm
 from mindformers.tools.logger import logger
 
 __all__ = ['Baichuan13BV2ForCausalLM', 'Baichuan13BV2Model', 'Baichuan13BDPO']
-
+mindformers_version = mindformers.__version__
 
 class Baichuan2PreTrainedModel(PreTrainedModel):
     """
@@ -292,8 +292,10 @@ class Baichuan13BV2Model(Baichuan2PreTrainedModel):
                                              param_init_type=config.param_init_type,
                                              parallel_optimizer=True)
         self.layers = nn.CellList()
-        for layer_id in range(config.num_layers):
-            layer = Baichuan13BDecodeLayer(config.batch_size,
+        if mindformers_version == "r1.2.0":
+            from mindformers.models.utils import set_layer_stage_recompute
+            for layer_id in range(config.num_layers):
+                layer = Baichuan13BDecodeLayer(config.batch_size,
                                            config.seq_length,
                                            layer_id,
                                            dim=config.hidden_size,
@@ -313,8 +315,34 @@ class Baichuan13BV2Model(Baichuan2PreTrainedModel):
                                            block_size=self.block_size,
                                            num_blocks=self.num_blocks,
                                            parallel_config=config.parallel_config)
-            set_layer_stage_recompute(layer, layer_id, config.offset, config.parallel_config, config.num_layers)
-            self.layers.append(layer)
+                set_layer_stage_recompute(layer, layer_id, config.offset, config.parallel_config, config.num_layers)
+                self.layers.append(layer)
+        elif mindformers_version == "r1.3.0":
+            from mindformers.models.utils import LayerSetting
+            self.layers_setting = LayerSetting(config.offset, config.parallel_config, config.num_layers)
+            for layer_id in range(config.num_layers):
+                layer = Baichuan13BDecodeLayer(config.batch_size,
+                                           config.seq_length,
+                                           layer_id,
+                                           dim=config.hidden_size,
+                                           n_heads=config.num_heads,
+                                           n_kv_heads=config.n_kv_heads,
+                                           intermediate_size=config.intermediate_size,
+                                           multiple_of=config.multiple_of,
+                                           ffn_dim_multiplier=config.ffn_dim_multiplier,
+                                           norm_eps=config.rms_norm_eps,
+                                           compute_dtype=config.compute_dtype,
+                                           layernorm_compute_dtype=config.layernorm_compute_type,
+                                           softmax_compute_dtype=config.softmax_compute_type,
+                                           param_init_type=config.param_init_type,
+                                           use_past=config.use_past,
+                                           is_dynamic=config.is_dynamic,
+                                           use_flash_attention=self.use_flash_attention,
+                                           block_size=self.block_size,
+                                           num_blocks=self.num_blocks,
+                                           parallel_config=config.parallel_config)
+                self.layers_setting(layer, layer_id)
+                self.layers.append(layer)
         self.norm_out = LlamaRMSNorm(config.hidden_size, config.rms_norm_eps,
                                      compute_type=config.layernorm_compute_type)
         self.alibi_tensor = build_alibi_tensor_v2(seq_len=config.seq_length,

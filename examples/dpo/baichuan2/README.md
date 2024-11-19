@@ -13,11 +13,11 @@ DPO训练中使用的网络和Mindformers中使用的结构一致。请参考[�
 DPO数据集仍旧使用CValues数据集，相关[链接](https://github.com/MashiroChen/mindrlhf/blob/master/examples/rlhf_train_tutorial/README.md)制作。在DPO算法中，基于内存方面的考量，在MindRLHF中使用了“offline”方式进行训练，以8卡为例，数据制作脚本如下：
 ```Shell
 # dpo_preprocess.sh
-bash ./scripts/msrun_launcher.sh \
-"dpo_preprocess_baichuan_parallel.py \
---src /path/mindrlhf/datasets/cvalues/source/one.jsonl \
---dst /path/mindrlhf/data/cvalues/temp/cvalues_one_4096.mindrecord \
---config /path/mindrlhf/model_configs/baichuan_config/process_baichuan2_13b.yaml \
+bash scripts/msrun_launcher.sh \
+"mindrlhf/tools/dpo_preprocess.py \
+--src /path/to/input.jsonl \
+--dst /path/to/output.mindrecord \
+--config model_configs/baichuan_config/process_baichuan2_13b.yaml \
 --tokenizer /path/mindrlhf/tokenizers/baichuan/tokenizer.model \
 --seq_len 4097 \
 --dataset_type cvalues \
@@ -33,6 +33,18 @@ seq_len: 输出数据的序列长度
 dataset_type: 需要处理的数据类型
 save_interval: 生成数据集数量
 ```
+如果需要将处理后的多个数据文件合并为一个，数据处理脚本如下：
+```Shell
+python mindrlhf/tools/dpo_preprocess.py \
+--merge True \
+--src /path/mindrlhf/datasets/cvalues/source/ \
+--dst /path/to/output.mindrecord 
+# 参数说明
+merge: 合并数据
+src: 原始数据集文件夹路径，只处理该路径下mindrecord数据
+dst: 输出数据集文件路径
+```
+
 
 ## 步骤2: DPO训练
 
@@ -51,7 +63,7 @@ bash ./scripts/msrun_launcher.sh \
 ### 
 训练完成后，会存储下切片后的权重，如单机8卡的权重，但是在实际应用中，可能只需要单机单卡，就可以进行推理功能。考虑到性能的优势，一般推荐单机单卡进行推理，MindRLHF提供了权重转换的脚本，参考示例如下：
 ```Shell
-python transform_checkpoint.py \
+python mindrlhf/tools/transform_checkpoint.py \
   --src_checkpoint=/path/output/checkpoint_network \
   --src_strategy=/path/output/strategy \
   --dst_checkpoint=/path/mindrlhf/examples/dpo/baichuan2
