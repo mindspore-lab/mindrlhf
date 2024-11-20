@@ -190,8 +190,8 @@ model:
     rotary_pct: 1.0
     rotary_emb_base: 1000000
     kv_channels: 128
-    alpha: 1.0  # coef for dpo loss
-    beta: 0.1   # coef for sft loss
+    alpha: 0.1  # coef for sft loss
+    beta: 1.0   # temperature of dpo loss in logsigmoid function
 
   arch:
     type: Qwen2_5_7BDPO
