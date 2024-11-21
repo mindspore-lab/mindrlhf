@@ -29,9 +29,11 @@ from mindspore.ops import operations as P
 from mindspore.parallel._utils import _get_parallel_mode, _is_sharding_propagation
 from mindspore.common.initializer import initializer, HeUniform
 
+import mindformers
 from mindformers.core.loss.loss import CrossEntropyLoss
 from mindformers.models.modeling_utils import PreTrainedModel
-from mindformers.models.utils import lazy_inline, set_layer_stage_recompute
+
+from mindformers.models.utils import lazy_inline
 from mindformers.modules.transformer.op_parallel_config import _check_config
 from mindformers.modules.transformer.transformer import LowerTriangularMaskWithDynamic
 from mindformers.modules.layers import FreqsMgr
@@ -46,6 +48,7 @@ from mindformers.tools.utils import get_use_rope_self_define, get_predict_run_mo
 
 __all__ = ['Baichuan7BV2ForCausalLM', 'Baichuan7BV2Model']
 
+mindformers_version = mindformers.__version__
 
 class Baichuan2PreTrainedModel(PreTrainedModel):
     """
@@ -117,31 +120,61 @@ class Baichuan7BV2Model(Baichuan2PreTrainedModel):
                                              param_init_type=config.param_init_type,
                                              parallel_optimizer=True)
         self.layers = nn.CellList()
-        for layer_id in range(config.num_layers):
-            layer = LLamaDecodeLayer(layer_id,
-                                     dim=config.hidden_size,
-                                     n_heads=config.num_heads,
-                                     n_kv_heads=config.n_kv_heads,
-                                     intermediate_size=config.intermediate_size,
-                                     multiple_of=config.multiple_of,
-                                     ffn_dim_multiplier=config.ffn_dim_multiplier,
-                                     norm_eps=config.rms_norm_eps,
-                                     qkv_has_bias=config.qkv_has_bias,
-                                     qkv_concat=config.qkv_concat,
-                                     compute_dtype=config.compute_dtype,
-                                     layernorm_compute_dtype=config.layernorm_compute_type,
-                                     softmax_compute_dtype=config.softmax_compute_type,
-                                     rotary_dtype=config.rotary_dtype,
-                                     param_init_type=config.param_init_type,
-                                     use_past=config.use_past,
-                                     use_flash_attention=self.use_flash_attention,
-                                     is_dynamic=config.is_dynamic,
-                                     block_size=config.block_size,
-                                     num_blocks=config.num_blocks,
-                                     use_rope_slice=config.use_rope_slice,
-                                     parallel_config=config.parallel_config)
-            set_layer_stage_recompute(layer, layer_id, config.offset, config.parallel_config, config.num_layers)
-            self.layers.append(layer)
+        if mindformers_version == "r1.2.0":
+            from mindformers.models.utils import set_layer_stage_recompute
+            for layer_id in range(config.num_layers):
+                layer = LLamaDecodeLayer(layer_id,
+                                         dim=config.hidden_size,
+                                         n_heads=config.num_heads,
+                                         n_kv_heads=config.n_kv_heads,
+                                         intermediate_size=config.intermediate_size,
+                                         multiple_of=config.multiple_of,
+                                         ffn_dim_multiplier=config.ffn_dim_multiplier,
+                                         norm_eps=config.rms_norm_eps,
+                                         qkv_has_bias=config.qkv_has_bias,
+                                         qkv_concat=config.qkv_concat,
+                                         compute_dtype=config.compute_dtype,
+                                         layernorm_compute_dtype=config.layernorm_compute_type,
+                                         softmax_compute_dtype=config.softmax_compute_type,
+                                         rotary_dtype=config.rotary_dtype,
+                                         param_init_type=config.param_init_type,
+                                         use_past=config.use_past,
+                                         use_flash_attention=self.use_flash_attention,
+                                         is_dynamic=config.is_dynamic,
+                                         block_size=config.block_size,
+                                         num_blocks=config.num_blocks,
+                                         use_rope_slice=config.use_rope_slice,
+                                         parallel_config=config.parallel_config)
+                set_layer_stage_recompute(layer, layer_id, config.offset, config.parallel_config, config.num_layers)
+                self.layers.append(layer)
+        elif mindformers_version == "r1.3.0":
+            from mindformers.models.utils import LayerSetting
+            self.layers_setting = LayerSetting(config.offset, config.parallel_config, config.num_layers)
+            for layer_id in range(config.num_layers):
+                layer = LLamaDecodeLayer(layer_id,
+                                         dim=config.hidden_size,
+                                         n_heads=config.num_heads,
+                                         n_kv_heads=config.n_kv_heads,
+                                         intermediate_size=config.intermediate_size,
+                                         multiple_of=config.multiple_of,
+                                         ffn_dim_multiplier=config.ffn_dim_multiplier,
+                                         norm_eps=config.rms_norm_eps,
+                                         qkv_has_bias=config.qkv_has_bias,
+                                         qkv_concat=config.qkv_concat,
+                                         compute_dtype=config.compute_dtype,
+                                         layernorm_compute_dtype=config.layernorm_compute_type,
+                                         softmax_compute_dtype=config.softmax_compute_type,
+                                         rotary_dtype=config.rotary_dtype,
+                                         param_init_type=config.param_init_type,
+                                         use_past=config.use_past,
+                                         use_flash_attention=self.use_flash_attention,
+                                         is_dynamic=config.is_dynamic,
+                                         block_size=config.block_size,
+                                         num_blocks=config.num_blocks,
+                                         use_rope_slice=config.use_rope_slice,
+                                         parallel_config=config.parallel_config)
+                self.layers_setting(layer, layer_id)
+                self.layers.append(layer)
         self.norm_out = LlamaRMSNorm(config.hidden_size, config.rms_norm_eps,
                                      compute_type=config.layernorm_compute_type)
 
@@ -225,6 +258,7 @@ class NormHead(nn.Cell):
         Outputs:
             Tensor of shape :math:`(batch, seq_length, vocab_size)`.
     """
+
     def __init__(self,
                  hidden_size,
                  vocab_size,
@@ -392,7 +426,7 @@ class Baichuan7BV2ForCausalLM(Baichuan2PreTrainedModel):
         input_ids = Tensor(input_ids, mstype.int32)
         labels = Tensor(kwargs["labels"]) if "labels" in kwargs else None
         bs, seq = input_ids.shape[0], input_ids.shape[1]
-        slot_mapping = Tensor(np.ones(shape=tuple([bs*seq])), mstype.int32)
+        slot_mapping = Tensor(np.ones(shape=tuple([bs * seq])), mstype.int32)
         return input_ids, labels, None, None, None, None, None, None, None, None, None, slot_mapping
 
     def set_dynamic_inputs(self, **kwargs):
