@@ -11,7 +11,7 @@ class PPOConfig:
     align_type: str = ''
     epochs: int = 2
     total_steps: int = 100000
-    batch_size: int = 1
+    batch_size: int = 2
     checkpoint_interval = 10000
     eval_interval: int = 200
 
@@ -44,7 +44,7 @@ class PPOConfig:
     ref_std: bool = False
     gen_experience_kwargs: bool = False
 
-    sink_size: int = 1
+    sink_size: int = 2
     device_target: str = 'Ascend'
     parallel_mode: str = 'semi_auto_parallel'
     full_batch: bool = True
@@ -62,3 +62,6 @@ class PPOConfig:
     sft_model_path: str = "/path/model.yaml"
     critic_model_path: str = "/path/model.yaml"
     reward_model_path: str = "/path/model.yaml"
+    is_shared_backbone: bool = True
+    only_save_strategy: bool = False
+    use_parallel: bool = False
