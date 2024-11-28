@@ -1,4 +1,4 @@
-# Baichuan2_13b DPO 训练教程
+# Baichuan2_13b-DPO 训练教程
 
 ## 网络介绍
 DPO训练中使用的网络和Mindformers中使用的结构一致。请参考[链接](https://portrait.gitee.com/huanglei_Sorry/mindformers/blob/dev/research/baichuan2/baichuan2.md)获得更详细的介绍内容。
@@ -17,9 +17,9 @@ bash scripts/msrun_launcher.sh \
 "mindrlhf/tools/dpo_preprocess.py \
 --src /path/to/input.jsonl \
 --dst /path/to/output.mindrecord \
---config model_configs/baichuan_config/process_baichuan2_13b.yaml \
+--config /path/to/model_configs/baichuan_config/process_baichuan2_13b.yaml \
 --tokenizer /path/mindrlhf/tokenizers/baichuan/tokenizer.model \
---seq_len 4097 \
+--seq_len 4096 \
 --dataset_type cvalues \
 --save_interval 2" \
 8 

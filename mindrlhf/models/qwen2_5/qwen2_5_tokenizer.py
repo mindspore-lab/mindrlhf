@@ -26,6 +26,7 @@ from mindspore import log as logger
 from mindformers.tools.register import MindFormerRegister, MindFormerModuleType
 from mindformers.models.tokenization_utils import PreTrainedTokenizer
 from mindformers.models.tokenization_utils_base import AddedToken
+from mindformers.tools.utils import check_file
 
 
 VOCAB_FILES_NAMES = {
@@ -296,6 +297,7 @@ class Qwen2_5Tokenizer(PreTrainedTokenizer):
         self.fim_pad_id = self.special_tokens[FIMPAD]
         self.repo_name_id = self.special_tokens[REPONAME]
         self.file_sep_id = self.special_tokens[FILESEP]
+        check_file(vocab_file, "tokenizer")
         with open(vocab_file, encoding="utf-8") as vocab_handle:
             self.encoder = json.load(vocab_handle)
         self.decoder = {v: k for k, v in self.encoder.items()}
@@ -442,12 +444,10 @@ class Qwen2_5Tokenizer(PreTrainedTokenizer):
                ) -> str:
         """decode token ids"""
         # `spaces_between_special_tokens` defaults to True for _decode in slow tokenizers
-        # and cannot be configured elsewhere, but it should default to False for Qwen2_5Tokenizer
-        # avoid out of vocab
+        # and cannot be configured elsewhere, but it should default to False for Qwen2Tokenizer
         for i in range(len(token_ids)):
-            valid_token_ids = np.array([x if x <= 151664 else 151664 for x in token_ids[i]])
+            valid_token_ids = np.array([x if x <= 151634 else 151634 for x in token_ids[i]])
             token_ids[i] = valid_token_ids
-        
         return super().decode(
             token_ids,
             skip_special_tokens=skip_special_tokens,

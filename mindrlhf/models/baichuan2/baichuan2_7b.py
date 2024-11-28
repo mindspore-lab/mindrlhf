@@ -1,4 +1,4 @@
-# Copyright 2023 Huawei Technologies Co., Ltd
+# Copyright 2024 Huawei Technologies Co., Ltd
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -29,11 +29,9 @@ from mindspore.ops import operations as P
 from mindspore.parallel._utils import _get_parallel_mode, _is_sharding_propagation
 from mindspore.common.initializer import initializer, HeUniform
 
-import mindformers
 from mindformers.core.loss.loss import CrossEntropyLoss
 from mindformers.models.modeling_utils import PreTrainedModel
-
-from mindformers.models.utils import lazy_inline
+from mindformers.models.utils import lazy_inline, LayerSetting
 from mindformers.modules.transformer.op_parallel_config import _check_config
 from mindformers.modules.transformer.transformer import LowerTriangularMaskWithDynamic
 from mindformers.modules.layers import FreqsMgr
@@ -48,7 +46,6 @@ from mindformers.tools.utils import get_use_rope_self_define, get_predict_run_mo
 
 __all__ = ['Baichuan7BV2ForCausalLM', 'Baichuan7BV2Model']
 
-mindformers_version = mindformers.__version__
 
 class Baichuan2PreTrainedModel(PreTrainedModel):
     """
@@ -120,61 +117,35 @@ class Baichuan7BV2Model(Baichuan2PreTrainedModel):
                                              param_init_type=config.param_init_type,
                                              parallel_optimizer=True)
         self.layers = nn.CellList()
-        if mindformers_version == "r1.2.0":
-            from mindformers.models.utils import set_layer_stage_recompute
-            for layer_id in range(config.num_layers):
-                layer = LLamaDecodeLayer(layer_id,
-                                         dim=config.hidden_size,
-                                         n_heads=config.num_heads,
-                                         n_kv_heads=config.n_kv_heads,
-                                         intermediate_size=config.intermediate_size,
-                                         multiple_of=config.multiple_of,
-                                         ffn_dim_multiplier=config.ffn_dim_multiplier,
-                                         norm_eps=config.rms_norm_eps,
-                                         qkv_has_bias=config.qkv_has_bias,
-                                         qkv_concat=config.qkv_concat,
-                                         compute_dtype=config.compute_dtype,
-                                         layernorm_compute_dtype=config.layernorm_compute_type,
-                                         softmax_compute_dtype=config.softmax_compute_type,
-                                         rotary_dtype=config.rotary_dtype,
-                                         param_init_type=config.param_init_type,
-                                         use_past=config.use_past,
-                                         use_flash_attention=self.use_flash_attention,
-                                         is_dynamic=config.is_dynamic,
-                                         block_size=config.block_size,
-                                         num_blocks=config.num_blocks,
-                                         use_rope_slice=config.use_rope_slice,
-                                         parallel_config=config.parallel_config)
-                set_layer_stage_recompute(layer, layer_id, config.offset, config.parallel_config, config.num_layers)
-                self.layers.append(layer)
-        elif mindformers_version == "r1.3.0":
-            from mindformers.models.utils import LayerSetting
-            self.layers_setting = LayerSetting(config.offset, config.parallel_config, config.num_layers)
-            for layer_id in range(config.num_layers):
-                layer = LLamaDecodeLayer(layer_id,
-                                         dim=config.hidden_size,
-                                         n_heads=config.num_heads,
-                                         n_kv_heads=config.n_kv_heads,
-                                         intermediate_size=config.intermediate_size,
-                                         multiple_of=config.multiple_of,
-                                         ffn_dim_multiplier=config.ffn_dim_multiplier,
-                                         norm_eps=config.rms_norm_eps,
-                                         qkv_has_bias=config.qkv_has_bias,
-                                         qkv_concat=config.qkv_concat,
-                                         compute_dtype=config.compute_dtype,
-                                         layernorm_compute_dtype=config.layernorm_compute_type,
-                                         softmax_compute_dtype=config.softmax_compute_type,
-                                         rotary_dtype=config.rotary_dtype,
-                                         param_init_type=config.param_init_type,
-                                         use_past=config.use_past,
-                                         use_flash_attention=self.use_flash_attention,
-                                         is_dynamic=config.is_dynamic,
-                                         block_size=config.block_size,
-                                         num_blocks=config.num_blocks,
-                                         use_rope_slice=config.use_rope_slice,
-                                         parallel_config=config.parallel_config)
-                self.layers_setting(layer, layer_id)
-                self.layers.append(layer)
+        self.layer_setting = LayerSetting(config.num_layers,
+                                          config.offset,
+                                          config.parallel_config,
+                                          config.pp_interleave_num)
+        for layer_id in range(config.num_layers):
+            layer = LLamaDecodeLayer(layer_id,
+                                     dim=config.hidden_size,
+                                     n_heads=config.num_heads,
+                                     n_kv_heads=config.n_kv_heads,
+                                     intermediate_size=config.intermediate_size,
+                                     multiple_of=config.multiple_of,
+                                     ffn_dim_multiplier=config.ffn_dim_multiplier,
+                                     norm_eps=config.rms_norm_eps,
+                                     qkv_has_bias=config.qkv_has_bias,
+                                     qkv_concat=config.qkv_concat,
+                                     compute_dtype=config.compute_dtype,
+                                     layernorm_compute_dtype=config.layernorm_compute_type,
+                                     softmax_compute_dtype=config.softmax_compute_type,
+                                     rotary_dtype=config.rotary_dtype,
+                                     param_init_type=config.param_init_type,
+                                     use_past=config.use_past,
+                                     use_flash_attention=self.use_flash_attention,
+                                     is_dynamic=config.is_dynamic,
+                                     block_size=config.block_size,
+                                     num_blocks=config.num_blocks,
+                                     use_rope_slice=config.use_rope_slice,
+                                     parallel_config=config.parallel_config)
+            self.layer_setting(layer, layer_id)
+            self.layers.append(layer)
         self.norm_out = LlamaRMSNorm(config.hidden_size, config.rms_norm_eps,
                                      compute_type=config.layernorm_compute_type)
 
@@ -258,7 +229,6 @@ class NormHead(nn.Cell):
         Outputs:
             Tensor of shape :math:`(batch, seq_length, vocab_size)`.
     """
-
     def __init__(self,
                  hidden_size,
                  vocab_size,
@@ -328,8 +298,7 @@ class NormHead(nn.Cell):
 
 @MindFormerRegister.register(MindFormerModuleType.MODELS)
 class Baichuan7BV2ForCausalLM(Baichuan2PreTrainedModel):
-    r"""
-        Provide baichuan2_7b training loss or logits through network.
+    r"""Provide baichuan2_7b training loss or logits through network.
         Args:
             config (LlamaConfig): The config of baichuan2_7b model.
 
@@ -351,8 +320,7 @@ class Baichuan7BV2ForCausalLM(Baichuan2PreTrainedModel):
 
         Returns:
             Tensor, the loss or logits of the network.
-        """
-
+    """
     @lazy_inline
     def __init__(self, config: LlamaConfig = None):
         super(Baichuan7BV2ForCausalLM, self).__init__(config, auto_prefix=True)
@@ -390,7 +358,11 @@ class Baichuan7BV2ForCausalLM(Baichuan2PreTrainedModel):
                            vocab_size, loss_parallel_config.model_parallel)
             logger.warning("Now, the model_parallel num of Loss will be changed: mp = 1")
             loss_parallel_config.model_parallel = 1
-        self.loss = CrossEntropyLoss(parallel_config=loss_parallel_config)
+        check_for_nan_in_loss_and_grad = getattr(config, "check_for_nan_in_loss_and_grad", False)
+        calculate_per_token_loss = getattr(config, "calculate_per_token_loss", False)
+        self.loss = CrossEntropyLoss(parallel_config=loss_parallel_config,
+                                     check_for_nan_in_loss_and_grad=check_for_nan_in_loss_and_grad,
+                                     calculate_per_token_loss=calculate_per_token_loss)
 
         dp = config.parallel_config.data_parallel
         if not (_get_parallel_mode() in (ParallelMode.AUTO_PARALLEL,) and _is_sharding_propagation()):
@@ -409,7 +381,6 @@ class Baichuan7BV2ForCausalLM(Baichuan2PreTrainedModel):
                 self.lm_head.set_comm_fusion(config.parallel_config.gradient_aggregation_group)
 
         self.load_checkpoint(config)
-        self.set_model_predict_config()
         self.predict_run_mode = get_predict_run_mode()
 
     # pylint: disable=W0613
@@ -431,12 +402,10 @@ class Baichuan7BV2ForCausalLM(Baichuan2PreTrainedModel):
 
     def set_dynamic_inputs(self, **kwargs):
         dynamic_input_ids = Tensor(shape=[None, None], dtype=mstype.int32)
-        dynamic_input_position = Tensor(shape=[None], dtype=mstype.int32)
-        dynamic_init_reset = Tensor([False], mstype.bool_)
         dynamic_batch_valid_length = Tensor(shape=[None, None], dtype=mstype.int32)
         dynamic_block_tables = Tensor(shape=[None, None], dtype=mstype.int32)
         dynamic_slot_mapping = Tensor(shape=[None], dtype=mstype.int32)
-        self.set_inputs(dynamic_input_ids, None, dynamic_input_position, None, None, None, dynamic_init_reset,
+        self.set_inputs(dynamic_input_ids, None, None, None, None, None, None,
                         dynamic_batch_valid_length, None, None, dynamic_block_tables, dynamic_slot_mapping)
         logger.info("Set dynamic input for baichuan2.")
 
@@ -450,7 +419,7 @@ class Baichuan7BV2ForCausalLM(Baichuan2PreTrainedModel):
 
     # pylint: disable=W0613
     def construct(self, input_ids, labels=None, input_position=None, position_ids=None, attention_mask=None,
-                  input_embeds=None, init_reset=True, batch_valid_length=None, batch_index=None, zactivate_len=None,
+                  input_embeds=None, init_reset=None, batch_valid_length=None, batch_index=None, zactivate_len=None,
                   block_tables=None, slot_mapping=None):
         """Baichuan7BV2 ForCausalLM forward."""
         bsz, seqlen = self.shape(input_ids)

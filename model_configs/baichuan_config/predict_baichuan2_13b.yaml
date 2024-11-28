@@ -91,7 +91,7 @@ parallel_config:
   pipeline_stage: 1
   use_seq_parallel: False
   micro_batch_num: 1
-  vocab_emb_dp: True
+  vocab_emb_dp: False
   gradient_aggregation_group: 4
 # when model parallel is greater than 1, we can set micro_batch_interleave_num=2, that may accelerate the train process.
 micro_batch_interleave_num: 1
@@ -150,10 +150,10 @@ model:
     use_flash_attention: False
     block_size: 16
     num_blocks: 512
-    is_dynamic: True
+    is_dynamic: False
     extend_method: "None" # support "None", "PI", "NTK"
     offset: 0
-    checkpoint_name_or_path: "/path/Baichuan2_13B_Base.ckpt"
+    checkpoint_name_or_path: "path/to/baichuan2-13B-Chat.ckpt"
     repetition_penalty: 1
     temperature: 1.0
     max_decode_length: 512

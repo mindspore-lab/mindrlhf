@@ -14,7 +14,7 @@ context:
   enable_graph_kernel: False
   graph_kernel_flags: "--disable_expand_ops=Softmax,Dropout --enable_parallel_fusion=true --reduce_fuse_depth=8 --enable_auto_tensor_inplace=true"
   max_call_depth: 10000
-  max_device_memory: "57GB"
+  max_device_memory: "59GB"
   save_graphs: False
   save_graphs_path: "./graph"
   device_id: 0
@@ -158,7 +158,7 @@ eval_dataset_task:
 
 # ==== runner config ====
 runner_config:
-  epochs: 4
+  epochs: 1
   batch_size: 1
   sink_mode: True
   sink_size: 1
@@ -209,8 +209,8 @@ parallel:
   strategy_ckpt_config:
     save_file: "./ckpt_strategy.ckpt"
 parallel_config:
-  data_parallel: 8
-  model_parallel: 1
+  data_parallel: 1
+  model_parallel: 8
   pipeline_stage: 1
   expert_parallel: 1
   micro_batch_num: 1

@@ -25,8 +25,6 @@ from mindformers.tools.utils import str2bool
 from mindformers.tools.logger import logger
 from mindformers.tools.cloud_adapter import cloud_monitor
 from mindformers.core.context import build_context
-from mindformers.tools import get_output_root_path
-
 
 from mindrlhf.models.baichuan2.baichuan2_13b import Baichuan13BDPO
 from mindrlhf.models.baichuan2.baichuan2_tokenizer import Baichuan2Tokenizer
@@ -38,36 +36,11 @@ from mindrlhf.models.glm4.glm_dpo import Glm4DPO
 from mindrlhf.models.glm4.glm4_tokenizer import ChatGLM4Tokenizer
 from mindrlhf import DPODataset
 
-def clear_auto_trans_output(config):
-    """clear transformed_checkpoint and strategy"""
-    strategy_dir = os.path.join(get_output_root_path(), "strategy")
-    if os.path.exists(strategy_dir) and config.local_rank == 0:
-        shutil.rmtree(strategy_dir)
-        os.makedirs(strategy_dir, exist_ok=True)
-    transformed_ckpt_dir = os.path.join(get_output_root_path(), "transformed_checkpoint")
-    if os.path.exists(transformed_ckpt_dir) and config.local_rank == 0:
-        shutil.rmtree(transformed_ckpt_dir)
-        os.makedirs(transformed_ckpt_dir, exist_ok=True)
-
-
-def context_init(use_parallel=False, optimizer_parallel=False, device_id=0):
-    """init context for mindspore."""
-    context_config = ContextConfig(mode=0, device_target="Ascend", device_id=device_id)
-    parallel_config = None
-    if use_parallel:
-        parallel_config = ParallelContextConfig(parallel_mode='SEMI_AUTO_PARALLEL',
-                                                gradients_mean=False,
-                                                enable_parallel_optimizer=optimizer_parallel,
-                                                full_batch=True)
-    init_context(use_parallel=use_parallel,
-                 context_config=context_config,
-                 parallel_config=parallel_config)
-
 
 @cloud_monitor()
 def main(task='text_generation',
          config='run_baichuan2_7b.yaml',
-         run_mode='train',
+         run_mode=None,
          seq_length=None,
          mode=None,
          use_parallel=None,
@@ -82,23 +55,22 @@ def main(task='text_generation',
          max_length=512,
          remote_save_url=None,
          vocab_file=None,
-         data_parallel=None,
-         model_parallel=None,
-         pipeline_stage=None,
-         micro_batch_num=None):
+         merges_file=None,
+         batch_size=None):
     """main function."""
 
     assert os.path.exists(config) and config.endswith(('.yaml', '.yml'))
 
     # init config
     config = MindFormerConfig(os.path.realpath(config))
-    run_mode = config.run_mode
     if seq_length is not None:
         config.model.model_config.seq_length = seq_length
     if mode is not None:
         config.context.mode = mode
         if mode:
             config.recompute_config.recompute = False
+    if run_mode is not None:
+        config.run_mode = run_mode
     if use_parallel is not None:
         config.use_parallel = use_parallel
     if device_id is not None:
@@ -113,14 +85,10 @@ def main(task='text_generation',
         config.remote_save_url = remote_save_url
     if vocab_file is not None:
         config.processor.tokenizer.vocab_file = vocab_file
-    if data_parallel is not None:
-        config.parallel_config.data_parallel = data_parallel
-    if model_parallel is not None:
-        config.parallel_config.model_parallel = model_parallel
-    if pipeline_stage is not None:
-        config.parallel_config.pipeline_stage = pipeline_stage
-    if micro_batch_num is not None:
-        config.parallel_config.micro_batch_num = micro_batch_num
+    if merges_file is not None:
+        config.processor.tokenizer.merges_file = merges_file
+    if batch_size is not None:
+        config.runner_config.batch_size = batch_size
 
     # init context
     build_context(config)
@@ -147,11 +115,15 @@ def main(task='text_generation',
     elif run_mode == 'predict':
         trainer = Trainer(args=config,
                           task=task)
-        result = trainer.predict(input_data=predict_data,
-                                 predict_checkpoint=ckpt,
-                                 auto_trans_ckpt=config.auto_trans_ckpt,
-                                 max_length=int(max_length))
-        logger.info(result)
+        batch_input = [[predict_data for _ in range(config.model.model_config.batch_size)]]
+        for input_prompt in batch_input:
+            result = trainer.predict(input_data=input_prompt,
+                                     predict_checkpoint=ckpt,
+                                     auto_trans_ckpt=config.auto_trans_ckpt,
+                                     max_length=int(max_length))
+            logger.info(result)
+    else:
+        raise ValueError(f'run_mode should be one of [train, finetune, eval, predict], but get {config.run_mode}')
 
 
 if __name__ == "__main__":
@@ -189,15 +161,11 @@ if __name__ == "__main__":
     parser.add_argument('--remote_save_url', default='', type=str,
                         help='whether use optimizer parallel. Default: None')
     parser.add_argument('--vocab_file', default=None, type=str,
-                        help='tokenizer model')
-    parser.add_argument('--dp', default=None, type=int,
-                        help='data parallel')
-    parser.add_argument('--mp', default=None, type=int,
-                        help='model parallel')
-    parser.add_argument('--pp', default=None, type=int,
-                        help='pipeline stage')
-    parser.add_argument('--micro_batch_num', default=None, type=int,
-                        help='micro batch num')
+                        help='tokenizer model or vocab_file')
+    parser.add_argument('--merges_file', default=None, type=str,
+                        help='merges_file')
+    parser.add_argument('--batch_size', default=None, type=str,
+                        help='batch_size')
     args = parser.parse_args()
 
     main(task=args.task,
@@ -217,7 +185,5 @@ if __name__ == "__main__":
          max_length=args.max_length,
          remote_save_url=args.remote_save_url,
          vocab_file=args.vocab_file,
-         data_parallel=args.dp,
-         model_parallel=args.mp,
-         pipeline_stage=args.pp,
-         micro_batch_num=args.micro_batch_num)
+         merges_file=args.merges_file,
+         batch_size=args.batch_size)

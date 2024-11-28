@@ -1,4 +1,4 @@
-## DPO训练
+## QWEN2-DPO 训练教程
 
 DPO训练中使用的网络和Mindformers中使用的结构一致。请参考[链接](https://gitee.com/mindspore/mindformers/blob/dev/research/qwen2/qwen2.md)获得更详细的介绍内容。
 
@@ -44,7 +44,7 @@ bash scripts/msrun_launcher.sh \
 "mindrlhf/tools/dpo_preprocess.py \
 --src /path/to/input.jsonl \
 --dst /path/to/output.mindrecord \
---config model_configs/qwen_config/process_qwen2_7b.yaml \
+--config /path/to/model_configs/qwen_config/process_qwen2_7b.yaml \
 --tokenizer /path/to/vocab.json \
 --merges_file /path/to/merges.txt \
 --seq_len 4097 \

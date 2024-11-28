@@ -133,7 +133,7 @@ model:
     batch_size: 1 # add for increase predict
     seq_length: 4096
     hidden_size: 5120
-    num_layers: 1
+    num_layers: 40
     num_heads: 40
     vocab_size: 125696
     multiple_of: 128
