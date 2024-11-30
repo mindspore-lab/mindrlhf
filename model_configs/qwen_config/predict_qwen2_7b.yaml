@@ -5,7 +5,7 @@ src_strategy_path_or_dir: ''
 auto_trans_ckpt: False  # If true, auto transform load_checkpoint to load in distributed model
 only_save_strategy: False
 resume_training: False
-use_parallel: False
+use_parallel: True
 run_mode: 'predict'
 
 # trainer config
@@ -74,8 +74,8 @@ callbacks:
 
 # default parallel of device num = 8 for Atlas 800T A2
 parallel_config:
-  data_parallel: 8
-  model_parallel: 1
+  data_parallel: 1
+  model_parallel: 4
   pipeline_stage: 1
   micro_batch_num: 1
   vocab_emb_dp: True
@@ -115,7 +115,7 @@ model:
     softmax_compute_type: "float16"
     rotary_dtype: "float16"
     param_init_type: "float32"
-    use_past: False
+    use_past: True
     extend_method: "None" # support "None", "PI", "NTK"
     use_flash_attention: True
     fine_grain_interleave: 1

@@ -1,3 +1,18 @@
+# Copyright 2024 Huawei Technologies Co., Ltd
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ============================================================================
+
 import argparse
 import numpy as np
 from tqdm import tqdm
@@ -7,7 +22,6 @@ import os
 import mindspore as ms
 from mindformers import AutoModel
 from mindformers.tools.utils import str2bool
-from examples.rlhf_train_tutorial.rlhf_data import write_mindrecord
 from mindrlhf.models.qwen2.qwen2_tokenizer import Qwen2Tokenizer
 from mindrlhf.models.qwen2_5.qwen2_5_tokenizer import Qwen2_5Tokenizer
 from mindrlhf.models.baichuan2.baichuan2_tokenizer import Baichuan2Tokenizer
@@ -89,7 +103,7 @@ def get_logps(model_name, model, input_ids, labels, attention_mask, loss_mask):
 
     if len(loss_mask.shape) == 1:
         loss_mask = ms.ops.unsqueeze(loss_mask, 0)
-    if model_name in ['qwen2_7b', 'baichuan2_13b', 'qwen2_5_7b']:
+    if model_name in ['qwen2_7b', 'qwen2_5_7b']:
         input_ids = P.StridedSlice()(input_ids, (0, 0), (input_ids.shape[0], min(batch_length, input_ids.shape[1] - 1)),
                                      (1, 1))
         labels = P.StridedSlice()(labels, (0, 1), (labels.shape[0], min(batch_length, labels.shape[1])), (1, 1))
@@ -212,9 +226,13 @@ def preprocess(data_path: str, dst_file: str, config_path: str, tokenizer_path: 
         def _build(prompt_ids, resp_ids):
             # check input_ids > seq_length
             input_ids = prompt_ids + resp_ids
-            labels = input_ids[:]
             attention_mask = [1] * len(input_ids)
-            loss_mask = [0] * len(prompt_ids) + [1] * len(resp_ids)
+            if model_name in ["glm4_9b"]:
+                labels = input_ids[1:] + [tokenizer.pad_token_id]
+                loss_mask = [0] * len(prompt_ids) + [1] * (len(resp_ids) - 1) + [0]
+            else:
+                labels = input_ids[:]
+                loss_mask = [0] * len(prompt_ids) + [1] * len(resp_ids)
 
             input_len = len(input_ids)
             input_ids = input_ids + [tokenizer.pad_token_id] * (seq_len - input_len)

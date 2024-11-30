@@ -43,9 +43,11 @@ from mindformers.tools.register.register import MindFormerModuleType, MindFormer
 from mindformers.models.llama.llama_config import LlamaConfig
 from mindformers.models.llama.llama_layer import LlamaEmbedding, LlamaFeedForward, LlamaRMSNorm
 from mindformers.tools.logger import logger
+from mindformers.tools.utils import get_predict_run_mode
 
 __all__ = ['Baichuan13BV2ForCausalLM', 'Baichuan13BV2Model', 'Baichuan13BDPO']
 mindformers_version = mindformers.__version__
+
 
 class Baichuan2PreTrainedModel(PreTrainedModel):
     """
@@ -59,8 +61,7 @@ class Baichuan2PreTrainedModel(PreTrainedModel):
 
 @MindFormerRegister.register(MindFormerModuleType.MODELS)
 class Baichuan13BV2ForCausalLM(Baichuan2PreTrainedModel):
-    r"""
-        Provide baichuan2_13B training loss or logits through network.
+    r"""Provide baichuan2_13B training loss or logits through network.
         Args:
             config (LlamaConfig): The config of baichuan2_13B model.
 
@@ -83,7 +84,7 @@ class Baichuan13BV2ForCausalLM(Baichuan2PreTrainedModel):
             >>> from research.baichuan2.baichuan2_13b import Baichuan13BV2ForCausalLM
             >>> config = LlamaConfig(batch_size=2)
             >>> network = Baichuan13BV2ForCausalLM(config=config)
-        """
+    """
 
     @lazy_inline
     def __init__(self, config: LlamaConfig = None):
@@ -112,7 +113,6 @@ class Baichuan13BV2ForCausalLM(Baichuan2PreTrainedModel):
         self.lm_head = NormHead(hidden_size=config.hidden_size,
                                 vocab_size=config.vocab_size,
                                 use_past=config.use_past,
-                                is_dynamic=config.is_dynamic,
                                 compute_dtype=config.compute_dtype)
 
         vocab_size = config.vocab_size
@@ -124,7 +124,11 @@ class Baichuan13BV2ForCausalLM(Baichuan2PreTrainedModel):
                            vocab_size, loss_parallel_config.model_parallel)
             logger.warning("Now, the model_parallel num of Loss will be changed: mp = 1")
             loss_parallel_config.model_parallel = 1
-        self.loss = CrossEntropyLoss(parallel_config=loss_parallel_config)
+        check_for_nan_in_loss_and_grad = getattr(config, "check_for_nan_in_loss_and_grad", False)
+        calculate_per_token_loss = getattr(config, "calculate_per_token_loss", False)
+        self.loss = CrossEntropyLoss(parallel_config=loss_parallel_config,
+                                     check_for_nan_in_loss_and_grad=check_for_nan_in_loss_and_grad,
+                                     calculate_per_token_loss=calculate_per_token_loss)
 
         dp = config.parallel_config.data_parallel
         if not (_get_parallel_mode() in (ParallelMode.AUTO_PARALLEL,) and _is_sharding_propagation()):
@@ -142,11 +146,9 @@ class Baichuan13BV2ForCausalLM(Baichuan2PreTrainedModel):
             else:
                 self.lm_head.set_comm_fusion(config.parallel_config.gradient_aggregation_group)
 
-        if config.is_dynamic:
-            self.reshape.add_prim_attr("skip_redistribution", True)
-
         self.load_checkpoint(config)
-        self.set_model_predict_config()
+        self.predict_run_mode = get_predict_run_mode()
+
     # pylint: disable=W0613
     def prepare_inputs_for_generation(self, input_ids, **kwargs):
         if self.config.is_dynamic and "origin_inputs" in kwargs:
@@ -157,12 +159,10 @@ class Baichuan13BV2ForCausalLM(Baichuan2PreTrainedModel):
 
     def set_dynamic_inputs(self, **kwargs):
         dynamic_input_ids = Tensor(shape=[None, None], dtype=mstype.int32)
-        dynamic_input_position = Tensor(shape=[None], dtype=mstype.int32)
-        dynamic_init_reset = Tensor([False], mstype.bool_)
         dynamic_batch_valid_length = Tensor(shape=[None, None], dtype=mstype.int32)
         dynamic_block_tables = Tensor(shape=[None, None], dtype=mstype.int32)
         dynamic_slot_mapping = Tensor(shape=[None], dtype=mstype.int32)
-        self.set_inputs(dynamic_input_ids, None, dynamic_input_position, None, None, None, dynamic_init_reset,
+        self.set_inputs(dynamic_input_ids, None, None, None, None, None, None,
                         dynamic_batch_valid_length, None, None, dynamic_block_tables, dynamic_slot_mapping)
         logger.info("Set dynamic input for baichuan2.")
 
@@ -171,7 +171,7 @@ class Baichuan13BV2ForCausalLM(Baichuan2PreTrainedModel):
         """Get Baichuan13BV2 model input tuple for transform ckpt."""
         input_ids = Tensor(input_ids, mstype.int32)
         bs, seq = input_ids.shape[0], input_ids.shape[1]
-        slot_mapping = Tensor(np.ones(shape=tuple([bs*seq])), mstype.int32)
+        slot_mapping = Tensor(np.ones(shape=tuple([bs * seq])), mstype.int32)
         return input_ids, None, None, None, None, None, None, None, None, None, None, slot_mapping
 
     def add_flags_custom(self, is_first_iteration):
@@ -184,7 +184,7 @@ class Baichuan13BV2ForCausalLM(Baichuan2PreTrainedModel):
 
     # pylint: disable=W0613
     def construct(self, input_ids, labels=None, input_position=None, position_ids=None, attention_mask=None,
-                  input_embeds=None, init_reset=True, batch_valid_length=None, batch_index=None, zactivate_len=None,
+                  input_embeds=None, init_reset=None, batch_valid_length=None, batch_index=None, zactivate_len=None,
                   block_tables=None, slot_mapping=None):
         """Baichuan13BV2ForCausalLM forward."""
         bsz, seqlen = self.shape(input_ids)
@@ -214,6 +214,10 @@ class Baichuan13BV2ForCausalLM(Baichuan2PreTrainedModel):
                 input_mask = self.mul(input_mask, label_mask)
 
         if not self.training:
+            logits = self.cast(logits, mstype.float32)
+            if self.predict_run_mode:
+                logits = self.reshape(logits, (-1, logits.shape[-1]))
+                return logits
             return logits, tokens, input_mask
 
         if logits.ndim > 2:
@@ -296,52 +300,55 @@ class Baichuan13BV2Model(Baichuan2PreTrainedModel):
             from mindformers.models.utils import set_layer_stage_recompute
             for layer_id in range(config.num_layers):
                 layer = Baichuan13BDecodeLayer(config.batch_size,
-                                           config.seq_length,
-                                           layer_id,
-                                           dim=config.hidden_size,
-                                           n_heads=config.num_heads,
-                                           n_kv_heads=config.n_kv_heads,
-                                           intermediate_size=config.intermediate_size,
-                                           multiple_of=config.multiple_of,
-                                           ffn_dim_multiplier=config.ffn_dim_multiplier,
-                                           norm_eps=config.rms_norm_eps,
-                                           compute_dtype=config.compute_dtype,
-                                           layernorm_compute_dtype=config.layernorm_compute_type,
-                                           softmax_compute_dtype=config.softmax_compute_type,
-                                           param_init_type=config.param_init_type,
-                                           use_past=config.use_past,
-                                           is_dynamic=config.is_dynamic,
-                                           use_flash_attention=self.use_flash_attention,
-                                           block_size=self.block_size,
-                                           num_blocks=self.num_blocks,
-                                           parallel_config=config.parallel_config)
+                                               config.seq_length,
+                                               layer_id,
+                                               dim=config.hidden_size,
+                                               n_heads=config.num_heads,
+                                               n_kv_heads=config.n_kv_heads,
+                                               intermediate_size=config.intermediate_size,
+                                               multiple_of=config.multiple_of,
+                                               ffn_dim_multiplier=config.ffn_dim_multiplier,
+                                               norm_eps=config.rms_norm_eps,
+                                               compute_dtype=config.compute_dtype,
+                                               layernorm_compute_dtype=config.layernorm_compute_type,
+                                               softmax_compute_dtype=config.softmax_compute_type,
+                                               param_init_type=config.param_init_type,
+                                               use_past=config.use_past,
+                                               is_dynamic=config.is_dynamic,
+                                               use_flash_attention=self.use_flash_attention,
+                                               block_size=self.block_size,
+                                               num_blocks=self.num_blocks,
+                                               parallel_config=config.parallel_config)
                 set_layer_stage_recompute(layer, layer_id, config.offset, config.parallel_config, config.num_layers)
                 self.layers.append(layer)
         elif mindformers_version == "r1.3.0":
             from mindformers.models.utils import LayerSetting
-            self.layers_setting = LayerSetting(config.offset, config.parallel_config, config.num_layers)
+            self.layer_setting = LayerSetting(config.num_layers,
+                                              config.offset,
+                                              config.parallel_config,
+                                              config.pp_interleave_num)
             for layer_id in range(config.num_layers):
                 layer = Baichuan13BDecodeLayer(config.batch_size,
-                                           config.seq_length,
-                                           layer_id,
-                                           dim=config.hidden_size,
-                                           n_heads=config.num_heads,
-                                           n_kv_heads=config.n_kv_heads,
-                                           intermediate_size=config.intermediate_size,
-                                           multiple_of=config.multiple_of,
-                                           ffn_dim_multiplier=config.ffn_dim_multiplier,
-                                           norm_eps=config.rms_norm_eps,
-                                           compute_dtype=config.compute_dtype,
-                                           layernorm_compute_dtype=config.layernorm_compute_type,
-                                           softmax_compute_dtype=config.softmax_compute_type,
-                                           param_init_type=config.param_init_type,
-                                           use_past=config.use_past,
-                                           is_dynamic=config.is_dynamic,
-                                           use_flash_attention=self.use_flash_attention,
-                                           block_size=self.block_size,
-                                           num_blocks=self.num_blocks,
-                                           parallel_config=config.parallel_config)
-                self.layers_setting(layer, layer_id)
+                                               config.seq_length,
+                                               layer_id,
+                                               dim=config.hidden_size,
+                                               n_heads=config.num_heads,
+                                               n_kv_heads=config.n_kv_heads,
+                                               intermediate_size=config.intermediate_size,
+                                               multiple_of=config.multiple_of,
+                                               ffn_dim_multiplier=config.ffn_dim_multiplier,
+                                               norm_eps=config.rms_norm_eps,
+                                               compute_dtype=config.compute_dtype,
+                                               layernorm_compute_dtype=config.layernorm_compute_type,
+                                               softmax_compute_dtype=config.softmax_compute_type,
+                                               param_init_type=config.param_init_type,
+                                               use_past=config.use_past,
+                                               is_dynamic=config.is_dynamic,
+                                               use_flash_attention=self.use_flash_attention,
+                                               block_size=self.block_size,
+                                               num_blocks=self.num_blocks,
+                                               parallel_config=config.parallel_config)
+                self.layer_setting(layer, layer_id)
                 self.layers.append(layer)
         self.norm_out = LlamaRMSNorm(config.hidden_size, config.rms_norm_eps,
                                      compute_type=config.layernorm_compute_type)
@@ -373,9 +380,6 @@ class Baichuan13BV2Model(Baichuan2PreTrainedModel):
             self.gather.shard(((1, mp, 1, 1), (1,)))
             self.norm_out.shard((dp, 1, 1))
 
-        if self.is_dynamic:
-            self.reshape.add_prim_attr("skip_redistribution", True)
-
     # pylint: disable=W0613
     def construct(self, tokens: Tensor, batch_valid_length=None, block_tables=None, slot_mapping=None):
         """Forward of baichuan2_13b model."""
@@ -385,9 +389,7 @@ class Baichuan13BV2Model(Baichuan2PreTrainedModel):
         if not self.use_past:
             mask = self.casual_mask(tokens)  # mask: mask: [bs , 1, seq, seq]
             input_mask = self.cast(self.not_equal(tokens, self.pad_token_id), mstype.float16)
-            alibi_tensor = self.slice(self.alibi_tensor, (0, 0, 0, 0),
-                                          (1, self.alibi_tensor.shape[1], seq_len, seq_len), (1, 1, 1, 1))
-            alibi_tensor = self.mul_alibi(alibi_tensor, self.reshape(input_mask, (bs, 1, -1, 1)))
+            alibi_tensor = self.mul_alibi(self.alibi_tensor, self.reshape(input_mask, (bs, 1, -1, 1)))
         else:
             mask = None
             if self.is_first_iteration:
@@ -398,6 +400,12 @@ class Baichuan13BV2Model(Baichuan2PreTrainedModel):
             else:
                 alibi_tensor = self.gather(self.alibi_tensor, batch_valid_length, 2)
                 alibi_tensor = self.transpose(alibi_tensor, (2, 1, 0, 3))
+                alibi_tensor = self.slice(alibi_tensor,
+                                          (0, 0, 0, 0),
+                                          (alibi_tensor.shape[0], alibi_tensor.shape[1], alibi_tensor.shape[2],
+                                           block_tables.shape[1] * self.block_size),
+                                          (1, 1, 1, 1),
+                                          )
         # tokens: [bs, seq/1]
         h = self.tok_embeddings(tokens)
         h = self.reshape(h, (bs, seq_len, self.hidden_size))
@@ -509,8 +517,6 @@ class Baichuan13BAttention(nn.Cell):
 
         self.shape = P.Shape()
         self.reshape = P.Reshape()
-        if is_dynamic:
-            self.reshape.add_prim_attr("skip_redistribution", True)
         self.transpose = P.Transpose()
         self.merger_head_transpose = P.Transpose()
         self.batch_matmul = P.BatchMatMul()
@@ -792,8 +798,6 @@ class Baichuan13BDecodeLayer(nn.Cell):
 
         self.shape = P.Shape()
         self.reshape = P.Reshape()
-        if is_dynamic:
-            self.reshape.add_prim_attr("skip_redistribution", True)
         self.add = P.Add()
         self.attention_norm = LlamaRMSNorm(self.hidden_size, norm_eps, compute_type=layernorm_compute_dtype)
         self.ffn_norm = LlamaRMSNorm(self.hidden_size, norm_eps, compute_type=layernorm_compute_dtype)
@@ -881,7 +885,6 @@ class NormHead(nn.Cell):
                  hidden_size,
                  vocab_size,
                  use_past,
-                 is_dynamic=False,
                  compute_dtype=mstype.float32,
                  eps=1e-5):
         super().__init__()
@@ -907,9 +910,6 @@ class NormHead(nn.Cell):
         self.hidden_size = hidden_size
         self.vocab_size = vocab_size
         self.assign = P.Assign()
-
-        if is_dynamic:
-            self.reshape.add_prim_attr("skip_redistribution", True)
 
     def construct(self, hidden_states):
         """Forward process of the NormHead"""
@@ -957,7 +957,7 @@ class DPOLoss(nn.Cell):
         self.log = P.Log()
         self.reduce_sum = P.ReduceSum(keep_dims=False)
         self.slice = P.StridedSlice().shard(((1, 1),))  # ?
-        self.slice_ind = P.StridedSlice().shard(((1,),))    # ?
+        self.slice_ind = P.StridedSlice().shard(((1,),))  # ?
         self.mul = P.Mul().shard(((dp, mp), (dp, mp)))
         self.sub = P.Sub().shard(((dp, mp), (dp, mp)))
         self.log_softmax = P.LogSoftmax()
@@ -1023,7 +1023,7 @@ class DPOLoss(nn.Cell):
         # rejected_ref_logps: [bs,]
         # [bs,]
         all_logps = self._get_batch_logps(policy_logits, policy_labels, loss_mask)
-        bs = all_logps.shape[0] // 2    # a sample has two bs responses (chosen and rejected)
+        bs = all_logps.shape[0] // 2  # a sample has two bs responses (chosen and rejected)
         policy_chosen_logps = self.slice_ind(all_logps, (0,), (bs,), (1,))
         policy_rejected_logps = self.slice_ind(all_logps, (bs,), (2 * bs,), (1,))
         losses, chosen_rewards, rejected_rewards = self.dpo_loss(
@@ -1046,11 +1046,13 @@ class DPOCrossEntropy(CrossEntropyLoss):
         self.slice_2d = P.StridedSlice().shard(((dp, mp),))
 
     def construct(self, logits, label, input_mask):
-        bs, seq_len, vocab_size = logits.shape    # a sample has two bs responses (chosen and rejected)
+        bs, seq_len, vocab_size = logits.shape  # a sample has two bs responses (chosen and rejected)
         policy_chosen_logps = self.slice_3d(logits, (0, 0, 0), (bs // 2, seq_len, vocab_size), (1, 1, 1))
         label = self.slice_2d(label, (0, 0), (bs // 2, seq_len), (1, 1))
         input_mask = self.slice_2d(input_mask, (0, 0), (bs // 2, seq_len), (1, 1))
-        return super().construct(policy_chosen_logps.reshape((-1, policy_chosen_logps.shape[-1])), label.reshape((-1,)), input_mask.reshape((-1,)))
+        return super().construct(policy_chosen_logps.reshape((-1, policy_chosen_logps.shape[-1])), label.reshape((-1,)),
+                                 input_mask.reshape((-1,)))
+
 
 @MindFormerRegister.register(MindFormerModuleType.LOSS)
 class DPOLossV2(nn.Cell):
@@ -1062,7 +1064,7 @@ class DPOLossV2(nn.Cell):
         self.log = P.Log()
         self.reduce_sum = P.ReduceSum(keep_dims=False)
         self.slice = P.StridedSlice().shard(((1, 1),))  # ?
-        self.slice_ind = P.StridedSlice().shard(((1,),))    # ?
+        self.slice_ind = P.StridedSlice().shard(((1,),))  # ?
         self.slice_mask = P.StridedSlice().shard(((1, 1),))
         self.mul = P.Mul().shard(((dp, mp), (dp, mp)))
         self.sub = P.Sub().shard(((dp, mp), (dp, mp)))
@@ -1097,9 +1099,7 @@ class DPOLossV2(nn.Cell):
         # [bs, seq_len] -> [bs, seq_len]
         labels = self.mul(labels, loss_mask)
         # [bs, seq_len, vocab_size]
-        print("logits", logits)
         log_probs = self.log_softmax(logits)
-        print("log_probs", log_probs)
         # [bs, seq_len] -> [bs, seq_len, 1]
         index = self.expand(labels, -1)
         index = self.cast(index, mstype.int32)
@@ -1107,9 +1107,7 @@ class DPOLossV2(nn.Cell):
         per_token_logps = self.gatherd(log_probs, -1, index)
         # [bs, seq_len, 1] -> [bs, seq_len]
         per_token_logps = self.squeeze(per_token_logps)
-        print("per_token_logps", per_token_logps)
         if self.average_log_prob:
-            print("per_token_logps final", self.reduce_sum(per_token_logps * loss_mask, -1), self.reduce_sum(loss_mask, -1))
             return self.reduce_sum(per_token_logps * loss_mask, -1) / self.reduce_sum(loss_mask, -1)
         else:
             return self.reduce_sum(per_token_logps * loss_mask, -1)
@@ -1140,7 +1138,8 @@ class DPOLossV2(nn.Cell):
         rejected_rewards = self.beta * (policy_rejected_logps - ref_rejected_logps)
         return losses, chosen_rewards, rejected_rewards, policy_chosen_logps_avg
 
-    def construct(self, policy_logits, policy_labels, chosen_loss_mask, rejected_loss_mask, ref_chosen_logps, ref_rejected_logps):
+    def construct(self, policy_logits, policy_labels, chosen_loss_mask, rejected_loss_mask, ref_chosen_logps,
+                  ref_rejected_logps):
         # policy_logits: [bs, seq_len, vocab_size]
         # policy_labels: [bs, seq_len]
         # loss_mask: [bs, seq_len]
@@ -1149,16 +1148,12 @@ class DPOLossV2(nn.Cell):
         # [bs,]
         loss_mask = ops.concat((chosen_loss_mask, rejected_loss_mask), axis=0)
         all_logps = self._get_batch_logps(policy_logits, policy_labels, loss_mask)
-        bs = all_logps.shape[0] // 2    # a sample has two bs responses (chosen and rejected)
+        bs = all_logps.shape[0] // 2  # a sample has two bs responses (chosen and rejected)
         policy_chosen_logps = self.slice_ind(all_logps, (0,), (bs,), (1,))
         policy_rejected_logps = self.slice_ind(all_logps, (bs,), (2 * bs,), (1,))
-        print("policy_chosen_logps", policy_chosen_logps)
-        print("policy_rejected_logps", policy_rejected_logps)
         if self.average_log_prob:
             ref_chosen_logps = ref_chosen_logps / self.reduce_sum(chosen_loss_mask, -1)
             ref_rejected_logps = ref_rejected_logps / self.reduce_sum(rejected_loss_mask, -1)
-        print("ref_chosen_logps", ref_chosen_logps)
-        print("ref_rejected_logps", ref_rejected_logps)
         dpo_loss, chosen_rewards, rejected_rewards, policy_chosen_logps_avg = self.dpo_loss(
             policy_chosen_logps,
             policy_rejected_logps,
@@ -1167,11 +1162,10 @@ class DPOLossV2(nn.Cell):
             loss_mask
         )
         sft_loss = -policy_chosen_logps_avg
-        print("sft loss: ", sft_loss)
-        print("dpo loss: ", dpo_loss)
         if self.phase == "train":
             return dpo_loss, sft_loss
         return dpo_loss, sft_loss, chosen_rewards, rejected_rewards
+
 
 @MindFormerRegister.register(MindFormerModuleType.MODELS)
 class Baichuan13BDPO(Baichuan13BV2ForCausalLM):
@@ -1234,28 +1228,19 @@ class Baichuan13BDPO(Baichuan13BV2ForCausalLM):
             loss_parallel_config = copy.deepcopy(config)
             loss_parallel_config.parallel_config.model_parallel = dp * mp
             loss_parallel_config.parallel_config.data_parallel = 1
-            if dp >= 32 and dp % 8 == 0: # For large scale training
+            if dp >= 32 and dp % 8 == 0:  # For large scale training
                 loss_parallel_config.parallel_config.model_parallel = 8
                 loss_parallel_config.parallel_config.data_parallel = dp * mp // 8
             self.dpo_loss = DPOLossV2(loss_parallel_config)
 
         self.alpha = config.alpha
         self.beta = config.beta
-        if config.parallel_config.vocab_emb_dp or (config.vocab_size % mp != 0):
-            self.sft_loss = DPOCrossEntropy(parallel_config=config.parallel_config)
-        else:
-            loss_parallel_config = copy.deepcopy(config.parallel_config)
-            loss_parallel_config.model_parallel = dp * mp
-            loss_parallel_config.data_parallel = 1
-            if dp >= 32 and dp % 8 == 0: # For large scale training
-                loss_parallel_config.model_parallel = 8
-                loss_parallel_config.data_parallel = dp * mp // 8
-            self.sft_loss = DPOCrossEntropy(parallel_config=loss_parallel_config)
+
 
     # pylint: disable=W0613
-    def construct(self, chosen_input_ids, chosen_labels=None, chosen_loss_mask=None, 
-                    chosen_ref_logps=None, rejected_input_ids=None, rejected_labels=None,
-                    rejected_loss_mask=None, rejected_ref_logps=None,
+    def construct(self, chosen_input_ids, chosen_labels=None, chosen_loss_mask=None,
+                  chosen_ref_logps=None, rejected_input_ids=None, rejected_labels=None,
+                  rejected_loss_mask=None, rejected_ref_logps=None,
                   input_position=None, position_ids=None,
                   input_embeds=None, init_reset=True, batch_valid_length=None, batch_index=None, zactivate_len=None,
                   block_tables=None, slot_mapping=None):
@@ -1272,12 +1257,7 @@ class Baichuan13BDPO(Baichuan13BV2ForCausalLM):
         if self.use_past:
             if not isinstance(batch_valid_length, Tensor):
                 batch_valid_length = self.ones((bsz,), mstype.int32)
-        if self.training:
-            tokens = self.slice(input_ids, (0, 0), (bsz, ori_seqlen - 1), (1, 1))
-            chosen_loss_mask = self.slice(chosen_loss_mask, (0, 1), (bsz, ori_seqlen), (1, 1))
-            rejected_loss_mask = self.slice(rejected_loss_mask, (0, 1), (bsz, ori_seqlen), (1, 1))
-        else:
-            tokens = input_ids
+        tokens = input_ids
         if batch_valid_length is not None:
             batch_valid_length = self.reshape(batch_valid_length, (-1,))
         output = self.model(tokens, batch_valid_length, block_tables, slot_mapping)
@@ -1286,26 +1266,12 @@ class Baichuan13BDPO(Baichuan13BV2ForCausalLM):
             output = self.gather(output, self.sub_batch_valid_len(batch_valid_length, 1), 1)
         logits = self.lm_head(output)
 
-        input_mask = self.cast(self.not_equal(tokens, self.pad_token_id), mstype.float32)
-        if labels is None:
-            labels = self.slice(input_ids, (0, 1), (bsz, ori_seqlen), (1, 1))
-        else:
-            if labels.ndim > 1:
-                if self.training:
-                    labels = self.slice(labels, (0, 1), (bsz, ori_seqlen), (1, 1))
-                label_mask = self.cast(self.not_equal(labels, self.ignore_token_id), mstype.float32)
-                input_mask = self.mul(input_mask, label_mask)
-
         if not self.training:
-            return logits, tokens, input_mask
+            return (logits,)
 
         if logits.ndim <= 2:
             logits = self.reshape(logits, (bsz, tokens.shape[1], logits.shape[-1]))
-        # logits = self.cast(logits, mstype.float32)
-        # labels = self.reshape(labels, (-1,))
-        # input_mask = self.reshape(input_mask, (-1,))
-        # loss = self.loss(logits, labels, input_mask)
         policy_logits = self.cast(logits, mstype.float32)
-        # sft_loss = self.sft_loss(policy_logits, labels, loss_mask)
-        dpo_loss, sft_loss = self.dpo_loss(policy_logits, labels, chosen_loss_mask, rejected_loss_mask, chosen_ref_logps.reshape((-1,)), rejected_ref_logps.reshape((-1,)))
-        return self.alpha * dpo_loss + self.beta * sft_loss
+        dpo_loss, sft_loss = self.dpo_loss(policy_logits, labels, chosen_loss_mask, rejected_loss_mask,
+                                           chosen_ref_logps.reshape((-1,)), rejected_ref_logps.reshape((-1,)))
+        return dpo_loss + self.alpha * sft_loss

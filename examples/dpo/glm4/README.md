@@ -1,4 +1,4 @@
-# GLM4-DPO训练
+# GLM4-DPO 训练教程
 
 DPO训练中使用的网络和Mindformers中使用的结构一致。请参考[链接](https://gitee.com/mindspore/mindformers/blob/r1.3.0/docs/model_cards/glm4.md)获得更详细的介绍内容。
 
@@ -41,13 +41,14 @@ bash scripts/msrun_launcher.sh \
 "mindrlhf/tools/dpo_preprocess.py \
 --src /path/to/input.jsonl \
 --dst /path/to/output.mindrecord \
---config model_configs/glm_config/process_glm4_9b.yaml \
+--config /path/to/model_configs/glm_config/process_glm4_9b.yaml \
 --tokenizer /path/to/tokenizer.model \
 --load_checkpoint /path/to/glm4_9b.ckpt \
 --auto_trans_ckpt True \
 --seq_len 8192 \
---dataset_type cvalues" \
-8
+--dataset_type cvalues \
+--save_interval 2" \
+8 
 
 # 参数说明
 src: 原始数据集文件路径
@@ -77,7 +78,7 @@ dst: 输出数据集文件路径
 # 请核对传入的checkpoint是否为分布式权重，如果不是将脚本中的auto_trans_ckpt设置为true，自动转换成分布式权重
 bash ../../../scripts/msrun_launcher.sh \
  "run_dpo.py \
- --config finetune_glm4_9b.yaml \
+ --config /path/to/model_configs/glm_config/finetune_glm4_9b.yaml \
  --train_dataset /path/to/input.mindrecord \
  --vocab_file /path/to/tokenizer.model \
  --load_checkpoint  /path/to/glm4_9b.ckpt \

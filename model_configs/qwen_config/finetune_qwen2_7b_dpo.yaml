@@ -19,7 +19,7 @@ eval_epoch_interval: 50        # num of epoch intervals between each eval, 1 mea
 
 # runner config
 runner_config:
-  epochs: 10
+  epochs: 1
   batch_size: 1
   sink_mode: True
   sink_size: 1
@@ -102,8 +102,8 @@ parallel:
 
 # default parallel of device num = 8
 parallel_config:
-  data_parallel: 8
-  model_parallel: 1
+  data_parallel: 2
+  model_parallel: 4
   pipeline_stage: 1
   use_seq_parallel: False
   micro_batch_num: 1

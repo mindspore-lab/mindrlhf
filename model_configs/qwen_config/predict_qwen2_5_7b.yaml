@@ -5,7 +5,7 @@ src_strategy_path_or_dir: ''
 auto_trans_ckpt: False  # If true, auto transform load_checkpoint to load in distributed model
 only_save_strategy: False
 resume_training: False
-use_parallel: False
+use_parallel: True
 run_mode: 'predict'
 
 # trainer config
@@ -33,7 +33,7 @@ runner_wrapper:
 # default parallel of device num = 8 for Atlas 800T A2
 parallel_config:
   data_parallel: 1
-  model_parallel: 1
+  model_parallel: 4
   pipeline_stage: 1
   micro_batch_num: 1
   vocab_emb_dp: False
@@ -45,7 +45,7 @@ model:
   model_config:
     type: LlamaConfig
     batch_size: 1
-    seq_length: 32768
+    seq_length: 4096
     hidden_size: 3584
     num_layers: 28
     num_heads: 28
@@ -77,7 +77,7 @@ model:
     top_k: 20
     top_p: 0.8
     temperature: 0.7
-    do_sample: True
+    do_sample: False
     is_dynamic: True
     qkv_concat: False
     auto_map:

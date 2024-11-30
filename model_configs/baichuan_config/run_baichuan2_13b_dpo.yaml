@@ -1,6 +1,6 @@
 seed: 0
 output_dir: './output' # path to save checkpoint/strategy
-load_checkpoint: '/home/qianjiahong/ckpt/baichuan/Baichuan2_13B_Base.ckpt'
+load_checkpoint: ''
 src_strategy_path_or_dir: ''
 auto_trans_ckpt: False  # If true, auto transform load_checkpoint to load in distributed model
 only_save_strategy: False
@@ -29,11 +29,11 @@ optimizer:
   beta2: 0.95
   eps: 1.e-8
 
-# lr sechdule
+# lr schedule
 lr_schedule:
   type: CosineWithWarmUpLR
-  learning_rate: 0 # pretrain：3.e-4
-  lr_end: 0 # pretrain：3.e-5
+  learning_rate: 2.e-5 # pretrain：3.e-4
+  lr_end: 1.e-6 # pretrain：3.e-5
   warmup_ratio: 0.03
   total_steps: -1 # -1 means it will load the total steps of the dataset
 
@@ -158,15 +158,15 @@ model:
     num_blocks: 512
     is_dynamic: False
     offset: 0
-    checkpoint_name_or_path: "" #/home/qianjiahong/0808/ckpt/baichuan/Baichuan2_13B_Base.ckpt
+    checkpoint_name_or_path: ""
     repetition_penalty: 1
     temperature: 1.0
     max_decode_length: 512
     top_k: 3
     top_p: 1
     do_sample: False
-    alpha: 0.0  # coef for dpo loss
-    beta: 1.0   # coef for sft loss
+    alpha: 0.1  # coef for sft loss
+    beta: 1.0   # temperature of dpo loss in logsigmoid function
   arch:
     type: Baichuan13BDPO
 
