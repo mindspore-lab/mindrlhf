@@ -118,9 +118,10 @@ class TrainOneStepWithLossScaleCell(TrainOneStepWithLossScaleCell):
         self.global_step = self.optimizer.global_step
         self.default_lr = Tensor([0.0], dtype=mstype.float32)
         self.enable_global_norm = enable_global_norm
-        self.enable_offload = config.enable_offload
+        # this config seems deleted
+        self.enable_offload = False
         self.clip_value = Tensor([1.0], dtype=mstype.float32)
-        if config.enable_offload:
+        if self.enable_offload:
             self.clip = GlobalNorm(self.weights, config)
         else:
             self.clip = ClipByGlobalNorm(self.weights, config, clip_norm=10.0)
@@ -223,9 +224,9 @@ class TrainPipelineWithLossScaleCell(nn.Cell):
         self.clip = ClipByGlobalNorm(self.weights, self.config)
         self.micro_size = config.parallel_config.micro_batch_num
         self.opt_shard = _get_enable_parallel_optimizer()
-        self.enable_offload = config.enable_offload
+        self.enable_offload = False
         self.clip_value = Tensor([1.0], dtype=mstype.float32)
-        if config.enable_offload:
+        if self.enable_offload:
             self.clip = GlobalNorm(self.weights, config)
         else:
             self.clip = ClipByGlobalNorm(self.weights, config)
