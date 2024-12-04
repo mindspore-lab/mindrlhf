@@ -16,6 +16,7 @@
 """
 MindRLHF utils
 """
+import os
 import time
 import hashlib
 import numpy as np
@@ -25,6 +26,8 @@ from mindspore.ops import operations as P
 from mindspore.ops import composite as C
 from mindspore.ops import functional as F
 import mindspore.common.dtype as mstype
+
+import mindspore as ms
 from mindspore.common.tensor import Tensor
 from mindspore.nn.learning_rate_schedule import LearningRateSchedule, PolynomialDecayLR, WarmUpLR, CosineDecayLR
 from mindspore.parallel._auto_parallel_context import auto_parallel_context
@@ -40,9 +43,12 @@ from mindspore.parallel._cost_model_context import _set_multi_subgraphs
 from mindspore import context
 import mindspore.common.dtype as mstype
 
+from mindformers.tools.ckpt_transform import TransformCkpt
+
 __all__ = ['set_pipeline_parallel_context', 'IsLastStage', 'IsLastStage',
            'FP32StateAdamWeightDecay', 'TimePoint', 'LearningRate',
-           'GlobalNorm', 'ClipByGlobalNorm']
+           'GlobalNorm', 'ClipByGlobalNorm', "transfer_from_str_to_bool",
+           "ckpt_transfer_for_two_stages"]
 
 
 def set_pipeline_parallel_context(ppo_config):
@@ -53,9 +59,9 @@ def set_pipeline_parallel_context(ppo_config):
     context.reset_auto_parallel_context()
 
     if hasattr(ppo_config.parallel_config, 'optimizer_shard'):
-        optimizer_shard = bool(ppo_config.parallel_config.optimizer_shard)
+        optimizer_shard = bool(ppo_config.parallel_config.get("optimizer_shard"))
     elif hasattr(ppo_config.parallel, 'enable_parallel_optimizer'):
-        optimizer_shard = bool(ppo_config.parallel.enable_parallel_optimizer)
+        optimizer_shard = bool(ppo_config.parallel.get("enable_parallel_optimizer"))
     else:
         optimizer_shard = True
 
@@ -64,7 +70,7 @@ def set_pipeline_parallel_context(ppo_config):
         full_batch=bool(ppo_config.full_batch), loss_repeated_mean=True,
         device_num=device_num,
         enable_parallel_optimizer=optimizer_shard,
-        pipeline_stages=ppo_config.parallel_config.pipeline_stage,
+        pipeline_stages=ppo_config.parallel_config.get("pipeline_stage"),
         enable_alltoall=bool(ppo_config.enable_alltoall),
         strategy_ckpt_save_file='strategy.ckpt')
     set_algo_parameters(elementwise_op_strategy_follow=True)
@@ -272,7 +278,7 @@ class ClipByGlobalNorm(nn.Cell):
         self.global_norm = GlobalNorm(params, config)
         self.clip_norm = Tensor([clip_norm], mstype.float32)
         self.hyper_map = C.HyperMap()
-        if config.param_init_type == mstype.float16 and config.enable_offload:
+        if config.param_init_type == mstype.float16:
             self.enable_grad_fp16 = True
         else:
             self.enable_grad_fp16 = False
@@ -360,3 +366,81 @@ def get_testing_dataset_path(dataset_name):
     if dataset is None:
         raise ValueError(f"Dataset {dataset_name} is not supported.")
     return dataset
+
+
+def get_valid_length_each_example(input_ids, pad_token_id):
+    """get valid length and max length in a batch"""
+    batch_size = input_ids.shape[0]
+    valid_length_each_example = []
+    for i in range(batch_size):
+        # As the nonzero returns the index and we need length
+        valid_length_each_example.append(
+            np.max(np.argwhere(input_ids[i] != pad_token_id))
+            + 1
+        )
+    valid_length_each_example = np.array(valid_length_each_example)
+    max_length = np.max(valid_length_each_example)
+    return valid_length_each_example, max_length
+
+
+def transfer_from_str_to_bool(input_str):
+    """transfer from string to bool"""
+    if input_str.lower() == "true":
+        return True
+    elif input_str.lower() == "false":
+        return False
+    else:
+        raise ValueError(f"input_str {input_str} is not supported.")
+
+
+def get_strategy(startegy_path, rank_id=None):
+    """Merge strategy if strategy path is dir
+
+    Args:
+        startegy_path (str): The path of stategy.
+        rank_id (int): The rank id of device.
+
+    Returns:
+        None or strategy path
+    """
+    if not startegy_path or startegy_path == "None":
+        return None
+
+    if not os.path.exists(startegy_path):
+        raise ValueError(f'{startegy_path} not found!')
+
+    if os.path.isfile(startegy_path):
+        return startegy_path
+
+    if os.path.isdir(startegy_path):
+        if rank_id:
+            merge_path = os.path.join(startegy_path, f'merged_ckpt_strategy_{rank_id}.ckpt')
+        else:
+            merge_path = os.path.join(startegy_path, f'merged_ckpt_strategy.ckpt')
+
+        if os.path.exists(merge_path):
+            os.remove(merge_path)
+
+        ms.merge_pipeline_strategys(startegy_path, merge_path)
+        return merge_path
+
+    return None
+
+
+def ckpt_transfer_for_two_stages(args):
+
+    transform_ckpt = TransformCkpt(
+        rank_id=get_rank(),
+        world_size=get_group_size(),
+        transform_process_num=8,
+        transform_by_rank=False
+    )
+
+    generate_ckpt = "./generate_ckpt"
+    return transform_ckpt(
+                src_checkpoint=args.load_sft_checkpoint,
+                dst_checkpoint_dir=generate_ckpt,
+                src_strategy="./train_policy_strategy/",
+                dst_strategy="./generate_policy_strategy/",
+                prefix="./generate_policy_"
+            )
